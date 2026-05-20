@@ -90,24 +90,24 @@ HTML = r"""<!doctype html>
     .jobs { display: grid; gap: 18px; }
     .job-group {
       background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
-      padding: 20px; box-shadow: var(--soft-shadow);
+      padding: 24px; box-shadow: var(--soft-shadow);
     }
-    .group-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin: 0 0 14px; }
-    .group-title { font-size: 23px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-    .group-jobs { display: grid; gap: 12px; }
+    .group-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin: 0 0 18px; }
+    .group-title { font-size: 25px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
+    .group-jobs { display: grid; gap: 14px; }
     .job {
-      background: var(--panel); border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
-      box-shadow: var(--soft-shadow);
+      background: #fbfcfa; border: 1px solid var(--line); border-radius: 24px; overflow: hidden;
+      box-shadow: none;
     }
-    .job-group .job { background: #f8fbf9; box-shadow: none; }
-    .job-head { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 18px 20px 15px; cursor: pointer; }
+    .job-group .job { background: #fbfcfa; box-shadow: none; }
+    .job-head { display: grid; grid-template-columns: 1fr auto; gap: 22px; padding: 24px 26px 22px; cursor: pointer; }
     .job-body { display: block; }
     .job.collapsed .job-body { display: none; }
     .job.collapsed .job-detail-lines { display: none; }
-    .job.collapsed .job-head { padding-bottom: 18px; }
+    .job.collapsed .job-head { padding-bottom: 24px; }
     .job.collapsed { background: #fbfcfa; }
-    .job-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 5px; }
-    .job-title { font-size: 18px; font-weight: 850; margin-bottom: 5px; letter-spacing: 0; }
+    .job-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+    .job-title { font-size: 23px; font-weight: 900; margin-bottom: 5px; letter-spacing: 0; }
     .job-title-row .job-title { margin-bottom: 0; }
     .job-status {
       display: inline-flex; align-items: center; min-height: 28px; padding: 4px 11px;
@@ -119,39 +119,39 @@ HTML = r"""<!doctype html>
     .job-status.failed { background: var(--bad); border-color: var(--bad); color: white; }
     .job-status.queued { background: #e8ede9; border-color: #d9e0dc; color: #555e5d; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-    .actions { display: flex; align-items: start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .actions { display: flex; align-items: start; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     button {
-      height: 34px; border: 1px solid var(--line); border-radius: 999px;
-      background: #f8faf8; color: var(--ink); padding: 0 14px;
+      height: 38px; border: 1px solid var(--line); border-radius: 999px;
+      background: #f8faf8; color: var(--ink); padding: 0 16px;
       cursor: pointer; font-weight: 750; box-shadow: 0 2px 7px rgba(18,22,22,.05);
     }
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
     .job-progress {
-      width: min(340px, 100%); height: 12px; margin-top: 12px;
-      background: #111111; border-radius: 999px; overflow: hidden; padding: 2px;
+      width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 14px;
+      background: #e7eee9; border-radius: 999px; overflow: hidden;
     }
     .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 999px; }
-    .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 13px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 15px 26px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
     .stats span {
       background: #eef3ef; color: #555e5d; border: 1px solid var(--line);
       border-radius: 999px; padding: 5px 10px; font-weight: 700;
     }
-    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; padding: 0 20px 16px; }
-    .metric { background: #f7faf8; border: 1px solid var(--line); border-radius: 18px; padding: 11px 12px; min-height: 66px; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 0 26px 18px; }
+    .metric { background: #f7faf8; border: 1px solid var(--line); border-radius: 18px; padding: 13px 14px; min-height: 76px; }
     .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
     .metric-value { font-size: 24px; font-weight: 900; margin-top: 4px; color: var(--ink); letter-spacing: 0; }
-    .worker-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; padding: 0 20px 16px; }
+    .worker-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 0 26px 18px; }
     .worker-card {
       background: var(--worker-color);
-      border: 0; border-radius: 18px; padding: 11px 12px; color: var(--ink);
+      border: 0; border-radius: 18px; padding: 15px 16px; color: var(--ink);
     }
     .worker-card strong { display: block; margin-bottom: 4px; }
     .frames-label {
-      padding: 0 20px 8px; color: var(--muted); font-size: 11px;
+      padding: 0 26px 8px; color: var(--muted); font-size: 11px;
       font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
     }
-    .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(35px, 1fr)); gap: 6px; padding: 0 20px 18px; }
+    .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(35px, 1fr)); gap: 6px; padding: 0 26px 24px; }
     .frame {
       height: 25px; border-radius: 10px; background: #e8ede9; color: #596161;
       font-size: 11px; font-weight: 750; display: grid; place-items: center; border: 1px solid transparent;
