@@ -35,6 +35,8 @@ IDC_MARKED_TAKES = 1011
 IDC_OUTPUT_SOURCE = 1012
 IDC_FRAME_SOURCE = 1013
 IDC_CHECK_SCENE = 1014
+IDC_CHECK_REPORT = 1015
+IDC_CHECK_STATUS = 1016
 
 CHECK_ERROR = "ERROR"
 CHECK_WARNING = "WARNING"
@@ -178,6 +180,97 @@ def get_output_path(doc):
     return get_output_path_info(doc)[0]
 
 
+def render_data_value(data, parameter_id, fallback=None):
+    try:
+        return data[parameter_id]
+    except Exception:
+        return fallback
+
+
+def active_camera_info(doc):
+    try:
+        base_draw = doc.GetActiveBaseDraw()
+        camera = base_draw.GetSceneCamera(doc) if base_draw else None
+        if camera is not None:
+            name = camera.GetName() or "Scene Camera"
+            try:
+                if camera.CheckType(c4d.Ocamera):
+                    return CHECK_OK, "active scene camera", name
+            except Exception:
+                pass
+            return CHECK_WARNING, "no scene camera defined and/or active", name
+    except Exception as exc:
+        return CHECK_WARNING, "could not inspect active camera", str(exc)
+    return CHECK_WARNING, "no scene camera defined and/or active", ""
+
+
+def render_engine_info(doc):
+    render_data = doc.GetActiveRenderData()
+    data = render_data.GetData()
+    engine = render_data_value(data, c4d.RDATA_RENDERENGINE, "")
+    names = []
+    try:
+        video_post = render_data.GetFirstVideoPost()
+        while video_post:
+            names.append(video_post.GetName() or str(video_post.GetType()))
+            video_post = video_post.GetNext()
+    except Exception:
+        pass
+    info = ", ".join(names) if names else "engine id %s" % engine
+    if "redshift" in info.lower() or str(engine) in ("1036219", "1036220"):
+        return CHECK_OK, "Redshift renderer detected", info
+    return CHECK_WARNING, "DreamRender is intended for Redshift renders", info
+
+
+def fps_info(doc):
+    fps = doc.GetFps()
+    if fps > 0:
+        return CHECK_OK, "%d fps" % fps, ""
+    return CHECK_ERROR, "invalid FPS", str(fps)
+
+
+def resolution_info(doc):
+    data = doc.GetActiveRenderData().GetData()
+    xres = render_data_value(data, c4d.RDATA_XRES, None)
+    yres = render_data_value(data, c4d.RDATA_YRES, None)
+    try:
+        xres = int(float(xres))
+        yres = int(float(yres))
+    except Exception:
+        return CHECK_WARNING, "could not read resolution", ""
+    if xres > 0 and yres > 0:
+        return CHECK_OK, "%dpx x %dpx" % (xres, yres), ""
+    return CHECK_ERROR, "invalid resolution", "%s x %s" % (xres, yres)
+
+
+def format_info(doc, output):
+    extension = os.path.splitext(output)[1].lstrip(".").upper()
+    if extension:
+        return CHECK_OK, extension, ""
+    data = doc.GetActiveRenderData().GetData()
+    image_format = render_data_value(data, getattr(c4d, "RDATA_FORMAT", 0), "")
+    if image_format:
+        return CHECK_OK, "format id %s" % image_format, ""
+    return CHECK_WARNING, "could not determine output format", ""
+
+
+def multipass_info(doc):
+    data = doc.GetActiveRenderData().GetData()
+    enabled = False
+    for parameter_name in ("RDATA_MULTIPASS_ENABLE", "RDATA_MULTIPASS_SAVEIMAGE"):
+        try:
+            enabled = enabled or bool(data[getattr(c4d, parameter_name)])
+        except Exception:
+            pass
+    output = render_data_path(data, c4d.RDATA_MULTIPASS_FILENAME)
+    if enabled or output:
+        label = "enabled"
+        if output:
+            label = "enabled, %s" % output
+        return CHECK_OK, label, ""
+    return CHECK_OK, "not enabled", ""
+
+
 def iter_takes(take):
     if take is None:
         return
@@ -232,6 +325,44 @@ def check_summary_line(checks):
     warnings = len(checks_with_level(checks, CHECK_WARNING))
     ok = len(checks_with_level(checks, CHECK_OK))
     return "%d errors, %d warnings, %d checks passed" % (errors, warnings, ok)
+
+
+def check_result_text(level, message, info=""):
+    prefix = "Success"
+    if level == CHECK_WARNING:
+        prefix = "Warning"
+    elif level == CHECK_ERROR:
+        prefix = "Error"
+    text = "%s: %s" % (prefix, message)
+    if info:
+        text += " Info: %s" % info
+    return text
+
+
+def add_report_row(rows, label, level, message, info=""):
+    rows.append({"label": label, "level": level, "text": check_result_text(level, message, info)})
+
+
+def report_has_level(rows, level):
+    return any(row["level"] == level for row in rows)
+
+
+def report_status_text(rows):
+    if report_has_level(rows, CHECK_ERROR):
+        return "Errors detected. Fix these before submitting."
+    if report_has_level(rows, CHECK_WARNING):
+        return "Warnings detected. Ready to submit with confirmation."
+    return "Scene check passed. Ready to submit."
+
+
+def format_scene_report(rows):
+    label_width = 15
+    lines = []
+    for row in rows:
+        lines.append("%s %s" % ((row["label"] + ":").ljust(label_width), row["text"]))
+    lines.append("")
+    lines.append("%s %s" % ("STATUS:".ljust(label_width), report_status_text(rows)))
+    return "\n".join(lines)
 
 
 def format_checks(checks, title="DreamRender Scene Check"):
@@ -490,6 +621,109 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
     return checks
 
 
+def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_marked_takes):
+    rows = []
+    camera_level, camera_message, camera_info = active_camera_info(doc)
+    add_report_row(rows, "CAMERA", camera_level, camera_message, camera_info)
+
+    document_folder = doc.GetDocumentPath()
+    document_name = get_document_name(doc)
+    if document_folder:
+        add_report_row(rows, "PROJECT", CHECK_OK, "scene saved", os.path.join(document_folder, document_name))
+    else:
+        add_report_row(rows, "PROJECT", CHECK_ERROR, "scene not saved", "Save the Cinema 4D file once before submitting")
+
+    assets, asset_error = collect_scene_assets(doc)
+    project = get_project_folder(doc)
+    if asset_error:
+        add_report_row(rows, "TEXTURES", CHECK_WARNING, "could not inspect assets", str(asset_error))
+    else:
+        missing = []
+        external = []
+        for asset in assets:
+            path = asset_text(asset, ("filename", "assetname", "name", "url", "nodePath"))
+            if not path:
+                continue
+            normalized = normalize_asset_path(path, project)
+            if not asset_exists(asset, path, project):
+                missing.append(path)
+            elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
+                external.append(normalized)
+        if missing:
+            add_report_row(rows, "TEXTURES", CHECK_ERROR, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0]))
+        elif external:
+            add_report_row(rows, "TEXTURES", CHECK_WARNING, "external asset paths found", "%d outside project; workers need same mapping" % len(external))
+        else:
+            add_report_row(rows, "TEXTURES", CHECK_OK, "all assets found", "%d assets checked" % len(assets))
+
+    engine_level, engine_message, engine_info = render_engine_info(doc)
+    add_report_row(rows, "RENDERENGINE", engine_level, engine_message, engine_info)
+
+    fps_level, fps_message, fps_detail = fps_info(doc)
+    add_report_row(rows, "FPS", fps_level, fps_message, fps_detail)
+
+    if output:
+        output_folder = folder_for_output_path(output)
+        if output_folder and has_c4d_tokens(output_folder):
+            add_report_row(rows, "OUTPUT", CHECK_OK, "Cinema 4D token path", output)
+        elif output_folder and os.path.isdir(output_folder):
+            add_report_row(rows, "OUTPUT", CHECK_OK, "folder exists", output)
+        elif output_folder:
+            add_report_row(rows, "OUTPUT", CHECK_WARNING, "folder does not exist yet", output_folder)
+        else:
+            add_report_row(rows, "OUTPUT", CHECK_WARNING, "path has no folder", output)
+    else:
+        add_report_row(rows, "OUTPUT", CHECK_ERROR, "empty output path", "Set Render Settings output")
+
+    multipass_level, multipass_message, multipass_detail = multipass_info(doc)
+    add_report_row(rows, "MULTIPASS", multipass_level, multipass_message, multipass_detail)
+
+    format_level, format_message, format_detail = format_info(doc, output)
+    add_report_row(rows, "FORMAT", format_level, format_message, format_detail)
+
+    if end < start:
+        add_report_row(rows, "FRAME", CHECK_ERROR, "invalid range", "%d-%d" % (start, end))
+    elif start == end:
+        add_report_row(rows, "FRAME", CHECK_OK, "single frame", str(start))
+    else:
+        add_report_row(rows, "FRAME", CHECK_OK, "frame range", "%d-%d" % (start, end))
+
+    resolution_level, resolution_message, resolution_detail = resolution_info(doc)
+    add_report_row(rows, "RESOLUTION", resolution_level, resolution_message, resolution_detail)
+
+    if chunk_size < 1:
+        add_report_row(rows, "BATCH", CHECK_ERROR, "invalid frames per batch", str(chunk_size))
+    else:
+        add_report_row(rows, "BATCH", CHECK_OK, "frames per batch", str(chunk_size))
+
+    if share and os.path.isdir(share):
+        writable, reason = probe_writable_folder(share)
+        if writable:
+            add_report_row(rows, "QUEUE", CHECK_OK, "DreamRender share writable", share)
+        else:
+            add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share not writable", reason)
+    elif share:
+        add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share inaccessible", share)
+    else:
+        add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share missing", "")
+
+    if submit_marked_takes:
+        marked_takes = get_marked_takes(doc)
+        if not marked_takes:
+            add_report_row(rows, "TAKES", CHECK_ERROR, "no marked takes found", "")
+        else:
+            labels = [take_name(take) for take in marked_takes]
+            duplicates = sorted(set(label for label in labels if labels.count(label) > 1))
+            if duplicates:
+                add_report_row(rows, "TAKES", CHECK_ERROR, "duplicate take names", ", ".join(duplicates))
+            else:
+                add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes" % len(marked_takes))
+    else:
+        add_report_row(rows, "TAKES", CHECK_OK, "single render job", "marked takes disabled")
+
+    return rows
+
+
 def create_job(share, scene, output, frames, name, chunk_size, notes, metadata=None):
     job_id = "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), uuid.uuid4().hex[:8])
     job_dir = os.path.join(share, "jobs", job_id)
@@ -547,13 +781,16 @@ class DreamRenderDialog(gui.GeDialog):
 
     def CreateLayout(self):
         self.SetTitle("Submit to DreamRender")
-        self.GroupBegin(2000, c4d.BFH_SCALEFIT, 3, 1)
+        self.GroupBegin(2000, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 2, 1)
+        self.GroupBegin(2001, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 0)
+        self.AddButton(IDC_CHECK_SCENE, c4d.BFH_SCALEFIT, name="Check Scene")
+        self.AddButton(IDC_OPEN_DASHBOARD, c4d.BFH_SCALEFIT, name="Open Dashboard")
+        self.AddSeparatorH(c4d.BFH_SCALEFIT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="Share")
         self.AddEditText(IDC_SHARE, c4d.BFH_SCALEFIT)
         self.AddButton(IDC_BROWSE_SHARE, c4d.BFH_LEFT, name="Browse")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Job name")
         self.AddEditText(IDC_NAME, c4d.BFH_SCALEFIT)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Output")
         self.AddEditText(IDC_OUTPUT, c4d.BFH_SCALEFIT)
         self.AddStaticText(IDC_OUTPUT_SOURCE, c4d.BFH_LEFT, name="")
@@ -572,11 +809,13 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddStaticText(0, c4d.BFH_LEFT, name="Notes")
         self.AddEditText(IDC_NOTES, c4d.BFH_SCALEFIT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
+        self.AddButton(IDC_SUBMIT, c4d.BFH_SCALEFIT, name="Submit Project")
         self.GroupEnd()
-        self.AddSeparatorH(c4d.BFH_SCALEFIT)
-        self.AddButton(IDC_CHECK_SCENE, c4d.BFH_LEFT, name="Check Scene")
-        self.AddButton(IDC_OPEN_DASHBOARD, c4d.BFH_LEFT, name="Open Dashboard")
-        self.AddButton(IDC_SUBMIT, c4d.BFH_RIGHT, name="Submit")
+        self.GroupBegin(2002, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Scene Check")
+        self.AddMultiLineEditText(IDC_CHECK_REPORT, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, initw=620, inith=320)
+        self.AddStaticText(IDC_CHECK_STATUS, c4d.BFH_SCALEFIT, name="Run Check Scene before submitting.")
+        self.GroupEnd()
         return True
 
     def InitValues(self):
@@ -591,6 +830,7 @@ class DreamRenderDialog(gui.GeDialog):
         self.SetInt32(IDC_CHUNK_SIZE, int(self.config.get("chunk_size", 5)))
         self.SetBool(IDC_MARKED_TAKES, bool(self.config.get("marked_takes", False)))
         self.SetString(IDC_NOTES, self.config.get("notes", ""))
+        self.run_scene_check(show_dialog=False)
         return True
 
     def Command(self, control_id, msg):
@@ -606,7 +846,7 @@ class DreamRenderDialog(gui.GeDialog):
             webbrowser.open("http://127.0.0.1:8766")
             return True
         if control_id == IDC_CHECK_SCENE:
-            self.run_scene_check(show_dialog=True)
+            self.run_scene_check(show_dialog=False)
             return True
         return True
 
@@ -624,8 +864,12 @@ class DreamRenderDialog(gui.GeDialog):
     def run_scene_check(self, show_dialog=True):
         share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        report = format_scene_report(rows)
+        self.SetString(IDC_CHECK_REPORT, report)
+        self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
         if show_dialog:
-            gui.MessageDialog(format_checks(checks))
+            gui.MessageDialog(report)
         return checks
 
     def submit(self):
@@ -734,7 +978,7 @@ dialog = None
 def main():
     global dialog
     dialog = DreamRenderDialog()
-    dialog.Open(c4d.DLG_TYPE_ASYNC, defaultw=520, defaulth=180)
+    dialog.Open(c4d.DLG_TYPE_ASYNC, defaultw=980, defaulth=520)
 
 
 if __name__ == "__main__":

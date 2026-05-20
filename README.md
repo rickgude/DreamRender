@@ -162,10 +162,9 @@ range. The submitter respects Manual, Current Frame, All Frames, and Preview
 Range modes, then shows the detected source beside the frame field.
 
 Use `Check Scene` before submitting when you want a render-farm-style preflight.
-It checks whether the scene is saved, the queue and job folders are writable,
-the frame range and batch size are valid, marked takes are usable, the output
-path looks sane, and Cinema 4D reports missing assets. Errors block submit;
-warnings ask for confirmation.
+The submitter shows a report with Camera, Project, Textures, Render Engine,
+FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes.
+Errors block submit; warnings ask for confirmation.
 
 Frames per batch controls how many contiguous frames a worker claims and renders
 per Cinema 4D commandline launch for that job. Higher values reduce scene reload
