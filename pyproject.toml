@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dreamrender"
+version = "0.1.0"
+description = "A lightweight Cinema 4D + Redshift render queue."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "DreamRender" }]
+dependencies = []
+
+[project.scripts]
+dreamrender = "dreamrender.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dreamrender = ["py.typed"]
