@@ -474,13 +474,12 @@ HTML = r"""<!doctype html>
         <div class="job-head" onclick="toggleJob('${j.id}')">
           <div>
             <div class="job-title-row">
-              <div class="job-title">${esc(j.name)}</div>
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
+              <div class="job-title">${esc(j.name)}</div>
             </div>
             <div class="meta">${j.progress.toFixed(1)}% &middot; ${esc(jobStatusLabel(j))} &middot; ${esc(statusText(j.counts))}</div>
             <div class="job-progress"><div class="bar" style="width:${j.progress}%"></div></div>
             <div class="job-detail-lines">
-              <div class="meta">${esc(j.id)}</div>
               <div class="meta">${esc((j.metadata || {}).take_name ? `Take: ${(j.metadata || {}).take_name}` : j.scene)}</div>
               <div class="meta">${esc(j.output)}</div>
             </div>
