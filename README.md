@@ -157,9 +157,8 @@ It opens a submit dialog with:
 
 - DreamRender share path
 - job name
-- output path
-- start frame
-- end frame
+- render settings dropdown
+- read-only start and end frame from the selected render settings
 - frames per batch
 - optional marked-take submission
 - scene checker / preflight
@@ -171,8 +170,9 @@ Range modes, then shows the detected source beside the frame field.
 Use `Check Scene` before submitting when you want a render-farm-style preflight.
 The submitter shows a table with Camera, Project, Textures, Render Engine,
 FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes,
-with separate columns for state, result, and info. Errors block submit; warnings
-ask for confirmation.
+with status icons, separate columns for state, result, and info, alternating row
+backgrounds, and a small progress indicator while checks run. Errors block
+submit; warnings ask for confirmation.
 
 Frames per batch controls how many contiguous frames a worker claims and renders
 per Cinema 4D commandline launch for that job. Higher values reduce scene reload

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import webbrowser
 import uuid
 from datetime import datetime, timezone
@@ -32,13 +33,14 @@ IDC_BROWSE_SHARE = 1008
 IDC_OPEN_DASHBOARD = 1009
 IDC_NOTES = 1010
 IDC_MARKED_TAKES = 1011
-IDC_OUTPUT_SOURCE = 1012
+IDC_RENDER_SETTINGS = 1012
 IDC_FRAME_SOURCE = 1013
 IDC_CHECK_SCENE = 1014
 IDC_CHECK_STATUS = 1016
-IDC_CHECK_TABLE_BASE = 1200
-CHECK_TABLE_ROWS = 13
-CHECK_TABLE_COLUMNS = 4
+IDC_START_LABEL = 1017
+IDC_END_LABEL = 1018
+IDC_CHECK_PROGRESS = 1019
+IDC_CHECK_TABLE = 1020
 
 CHECK_ERROR = "ERROR"
 CHECK_WARNING = "WARNING"
@@ -180,6 +182,26 @@ def get_output_path_info(doc):
 
 def get_output_path(doc):
     return get_output_path_info(doc)[0]
+
+
+def iter_render_data(doc):
+    try:
+        render_data = doc.GetFirstRenderData()
+    except Exception:
+        render_data = None
+    while render_data is not None:
+        yield render_data
+        try:
+            render_data = render_data.GetNext()
+        except Exception:
+            break
+
+
+def render_data_name(render_data, fallback="Render Settings"):
+    try:
+        return render_data.GetName() or fallback
+    except Exception:
+        return fallback
 
 
 def render_data_value(data, parameter_id, fallback=None):
@@ -380,6 +402,122 @@ def compact_text(value, limit=92):
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+class SceneCheckTableArea(gui.GeUserArea):
+    MIN_W = 660
+    MIN_H = 380
+    HEADER_H = 30
+    ROW_H = 27
+    PAD_X = 12
+
+    def __init__(self):
+        super(SceneCheckTableArea, self).__init__()
+        self.rows = []
+        self.current_index = -1
+        self.spinner = ""
+        self._width = self.MIN_W
+        self._height = self.MIN_H
+
+    def GetMinSize(self):
+        return self.MIN_W, self.MIN_H
+
+    def Sized(self, width, height):
+        self._width = max(1, int(width))
+        self._height = max(1, int(height))
+
+    def set_rows(self, rows, current_index=-1, spinner=""):
+        self.rows = list(rows or [])
+        self.current_index = current_index
+        self.spinner = spinner
+        try:
+            self.Redraw()
+        except Exception:
+            pass
+
+    def DrawMsg(self, x1, y1, x2, y2, msg):
+        self.OffScreenOn()
+        width = max(1, int(x2) - int(x1) + 1)
+        height = max(1, int(y2) - int(y1) + 1)
+        self._fill(0, 0, width, height, (0.115, 0.118, 0.124))
+        self._draw_header(width)
+        for index, row in enumerate(self.rows):
+            top = self.HEADER_H + index * self.ROW_H
+            if top > height:
+                break
+            self._draw_row(index, row, top, width)
+
+    def _columns(self, width):
+        icon_w = 42
+        check_w = 140
+        state_w = 95
+        result_w = 230
+        info_w = max(160, width - self.PAD_X * 2 - icon_w - check_w - state_w - result_w)
+        x = self.PAD_X
+        columns = []
+        for w in (icon_w, check_w, state_w, result_w, info_w):
+            columns.append((x, x + w))
+            x += w
+        return columns
+
+    def _draw_header(self, width):
+        self._fill(0, 0, width, self.HEADER_H, (0.075, 0.078, 0.084))
+        columns = self._columns(width)
+        headers = ("", "Check", "State", "Result", "Info")
+        for (left, _right), header in zip(columns, headers):
+            self._text(header, left + 4, 9, (0.72, 0.74, 0.76), bold=True, bg=(0.075, 0.078, 0.084))
+
+    def _draw_row(self, index, row, top, width):
+        bg = (0.142, 0.145, 0.152) if index % 2 else (0.125, 0.128, 0.134)
+        if index == self.current_index:
+            bg = (0.180, 0.160, 0.118)
+        self._fill(0, top, width, top + self.ROW_H, bg)
+        self._line(0, top + self.ROW_H, width, top + self.ROW_H, (0.085, 0.088, 0.094))
+        columns = self._columns(width)
+        level = row.get("level")
+        icon, color = self._icon(level)
+        if index == self.current_index and self.spinner:
+            icon = self.spinner
+            color = (1.0, 0.72, 0.25)
+        values = (
+            icon,
+            row.get("label", ""),
+            report_state_text(level),
+            compact_text(row.get("message"), 34),
+            compact_text(row.get("info"), 72),
+        )
+        colors = (
+            color,
+            (0.94, 0.94, 0.92),
+            color,
+            (0.88, 0.88, 0.86),
+            (0.72, 0.74, 0.74),
+        )
+        for column, value, text_color in zip(columns, values, colors):
+            self._text(value, column[0] + 4, top + 8, text_color, bold=value in (icon, row.get("label", "")), bg=bg)
+
+    def _icon(self, level):
+        if level == CHECK_ERROR:
+            return "✕", (0.94, 0.30, 0.36)
+        if level == CHECK_WARNING:
+            return "⚠", (1.00, 0.58, 0.22)
+        if level == CHECK_OK:
+            return "✓", (0.35, 0.79, 0.51)
+        return "•", (0.65, 0.67, 0.68)
+
+    def _fill(self, x1, y1, x2, y2, color):
+        self.DrawSetPen(c4d.Vector(color[0], color[1], color[2]))
+        self.DrawRectangle(int(x1), int(y1), int(x2), int(y2))
+
+    def _line(self, x1, y1, x2, y2, color):
+        self.DrawSetPen(c4d.Vector(color[0], color[1], color[2]))
+        self.DrawLine(int(x1), int(y1), int(x2), int(y2))
+
+    def _text(self, text, x, y, color, bold=False, bg=None):
+        self.DrawSetFont(c4d.FONT_BOLD if bold else c4d.FONT_STANDARD)
+        bg = bg or (0.125, 0.128, 0.134)
+        self.DrawSetTextCol(c4d.Vector(color[0], color[1], color[2]), c4d.Vector(bg[0], bg[1], bg[2]))
+        self.DrawText(str(text or ""), int(x), int(y))
 
 
 def format_checks(checks, title="DreamRender Scene Check"):
@@ -792,13 +930,12 @@ class DreamRenderDialog(gui.GeDialog):
         self.doc = c4d.documents.GetActiveDocument()
         self.config = read_config()
         self.check_rows = []
+        self.render_settings = []
+        self.check_table = SceneCheckTableArea()
         start, end, frame_source = get_render_range(self.doc)
         self.start = start
         self.end = end
         self.frame_source = frame_source
-
-    def check_cell_id(self, row_index, column_index):
-        return IDC_CHECK_TABLE_BASE + row_index * CHECK_TABLE_COLUMNS + column_index
 
     def CreateLayout(self):
         self.SetTitle("Submit to DreamRender")
@@ -816,15 +953,16 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddButton(IDC_BROWSE_SHARE, c4d.BFH_LEFT, name="Browse")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Job name")
         self.AddEditText(IDC_NAME, c4d.BFH_SCALEFIT)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Output")
-        self.AddEditText(IDC_OUTPUT, c4d.BFH_SCALEFIT)
-        self.AddStaticText(IDC_OUTPUT_SOURCE, c4d.BFH_LEFT, name="")
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Render settings")
+        self.AddComboBox(IDC_RENDER_SETTINGS, c4d.BFH_SCALEFIT, 260, 0)
+        self.GroupBegin(2004, c4d.BFH_SCALEFIT, 2, 0)
+        self.GroupSpace(12, 0)
         self.AddStaticText(0, c4d.BFH_LEFT, name="Start frame")
-        self.AddEditNumberArrows(IDC_START, c4d.BFH_LEFT)
-        self.AddStaticText(IDC_FRAME_SOURCE, c4d.BFH_LEFT, name="")
         self.AddStaticText(0, c4d.BFH_LEFT, name="End frame")
-        self.AddEditNumberArrows(IDC_END, c4d.BFH_LEFT)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="")
+        self.AddStaticText(IDC_START_LABEL, c4d.BFH_LEFT, initw=110, name="")
+        self.AddStaticText(IDC_END_LABEL, c4d.BFH_LEFT, initw=110, name="")
+        self.GroupEnd()
+        self.AddStaticText(IDC_FRAME_SOURCE, c4d.BFH_LEFT, name="")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Frames per batch")
         self.AddEditNumberArrows(IDC_CHUNK_SIZE, c4d.BFH_LEFT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
@@ -840,19 +978,9 @@ class DreamRenderDialog(gui.GeDialog):
         self.GroupBorderSpace(12, 10, 12, 10)
         self.GroupSpace(0, 8)
         self.AddStaticText(0, c4d.BFH_LEFT, name="Render farm preflight")
-        self.GroupBegin(2003, c4d.BFH_SCALEFIT | c4d.BFV_TOP, CHECK_TABLE_COLUMNS, 0)
-        self.GroupBorderSpace(0, 8, 0, 8)
-        self.GroupSpace(14, 6)
-        self.AddStaticText(0, c4d.BFH_LEFT, initw=120, name="Check")
-        self.AddStaticText(0, c4d.BFH_LEFT, initw=80, name="State")
-        self.AddStaticText(0, c4d.BFH_LEFT, initw=190, name="Result")
-        self.AddStaticText(0, c4d.BFH_SCALEFIT, initw=360, name="Info")
-        for row_index in range(CHECK_TABLE_ROWS):
-            self.AddStaticText(self.check_cell_id(row_index, 0), c4d.BFH_LEFT, initw=120, name="")
-            self.AddStaticText(self.check_cell_id(row_index, 1), c4d.BFH_LEFT, initw=80, name="")
-            self.AddStaticText(self.check_cell_id(row_index, 2), c4d.BFH_LEFT, initw=190, name="")
-            self.AddStaticText(self.check_cell_id(row_index, 3), c4d.BFH_SCALEFIT, initw=360, name="")
-        self.GroupEnd()
+        self.AddStaticText(IDC_CHECK_PROGRESS, c4d.BFH_LEFT, name="Idle")
+        self.AddUserArea(IDC_CHECK_TABLE, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 760, 380)
+        self.AttachUserArea(self.check_table, IDC_CHECK_TABLE)
         self.AddStaticText(IDC_CHECK_STATUS, c4d.BFH_SCALEFIT, name="Run Check Scene before submitting.")
         self.GroupEnd()
         return True
@@ -860,12 +988,8 @@ class DreamRenderDialog(gui.GeDialog):
     def InitValues(self):
         self.SetString(IDC_SHARE, self.config.get("share", DEFAULT_SHARE))
         self.SetString(IDC_NAME, os.path.splitext(get_document_name(self.doc))[0])
-        output, output_source = get_output_path_info(self.doc)
-        self.SetString(IDC_OUTPUT, output)
-        self.SetString(IDC_OUTPUT_SOURCE, output_source)
-        self.SetInt32(IDC_START, self.start)
-        self.SetInt32(IDC_END, self.end)
-        self.SetString(IDC_FRAME_SOURCE, self.frame_source)
+        self.refresh_render_settings()
+        self.update_frame_labels()
         self.SetInt32(IDC_CHUNK_SIZE, int(self.config.get("chunk_size", 5)))
         self.SetBool(IDC_MARKED_TAKES, bool(self.config.get("marked_takes", False)))
         self.SetString(IDC_NOTES, self.config.get("notes", ""))
@@ -887,41 +1011,77 @@ class DreamRenderDialog(gui.GeDialog):
         if control_id == IDC_CHECK_SCENE:
             self.run_scene_check(show_dialog=False)
             return True
+        if control_id == IDC_RENDER_SETTINGS:
+            self.select_render_setting(self.GetInt32(IDC_RENDER_SETTINGS))
+            self.run_scene_check(show_dialog=False)
+            return True
         return True
+
+    def refresh_render_settings(self):
+        self.render_settings = list(iter_render_data(self.doc))
+        active = self.doc.GetActiveRenderData()
+        active_index = 0
+        try:
+            self.FreeChildren(IDC_RENDER_SETTINGS)
+        except Exception:
+            pass
+        for index, render_data in enumerate(self.render_settings):
+            if render_data == active:
+                active_index = index
+            self.AddChild(IDC_RENDER_SETTINGS, index, render_data_name(render_data, "Render Settings %d" % (index + 1)))
+        if self.render_settings:
+            self.SetInt32(IDC_RENDER_SETTINGS, active_index)
+
+    def select_render_setting(self, index):
+        if index < 0 or index >= len(self.render_settings):
+            return
+        render_data = self.render_settings[index]
+        try:
+            self.doc.SetActiveRenderData(render_data)
+        except Exception:
+            pass
+        self.start, self.end, self.frame_source = get_render_range(self.doc)
+        self.update_frame_labels()
+
+    def update_frame_labels(self):
+        self.SetString(IDC_START_LABEL, str(self.start))
+        self.SetString(IDC_END_LABEL, str(self.end))
+        self.SetString(IDC_FRAME_SOURCE, "Frame source: %s" % self.frame_source)
 
     def collect_submit_values(self):
         share = self.GetString(IDC_SHARE).strip()
         name = self.GetString(IDC_NAME).strip() or os.path.splitext(get_document_name(self.doc))[0]
-        output = self.GetString(IDC_OUTPUT).strip()
-        start = self.GetInt32(IDC_START)
-        end = self.GetInt32(IDC_END)
+        output = get_output_path_info(self.doc)[0]
+        start = self.start
+        end = self.end
         chunk_size = self.GetInt32(IDC_CHUNK_SIZE)
         submit_marked_takes = self.GetBool(IDC_MARKED_TAKES)
         notes = self.GetString(IDC_NOTES).strip()
         return share, name, output, start, end, chunk_size, submit_marked_takes, notes
 
-    def update_check_table(self, rows):
+    def update_check_table(self, rows, current_index=-1, spinner=""):
         self.check_rows = rows
-        for row_index in range(CHECK_TABLE_ROWS):
-            if row_index < len(rows):
-                row = rows[row_index]
-                values = (
-                    row["label"],
-                    report_state_text(row["level"]),
-                    compact_text(row.get("message")),
-                    compact_text(row.get("info")),
-                )
-            else:
-                values = ("", "", "", "")
-            for column_index, value in enumerate(values):
-                self.SetString(self.check_cell_id(row_index, column_index), value)
+        self.check_table.set_rows(rows, current_index=current_index, spinner=spinner)
 
     def run_scene_check(self, show_dialog=True):
         share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         report = format_scene_report(rows)
+        partial_rows = []
+        spinner_frames = ("◐", "◓", "◑", "◒")
+        for index, row in enumerate(rows):
+            partial_rows.append(row)
+            spinner = spinner_frames[index % len(spinner_frames)]
+            self.SetString(IDC_CHECK_PROGRESS, "%s Checking %s (%d/%d)" % (spinner, row["label"], index + 1, len(rows)))
+            self.update_check_table(partial_rows, current_index=index, spinner=spinner)
+            try:
+                c4d.EventAdd()
+            except Exception:
+                pass
+            time.sleep(0.035)
         self.update_check_table(rows)
+        self.SetString(IDC_CHECK_PROGRESS, "Done: %d checks" % len(rows))
         self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
         if show_dialog:
             gui.MessageDialog(report)
