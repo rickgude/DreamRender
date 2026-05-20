@@ -145,6 +145,14 @@ python -m venv .venv
 DreamRender can also run without installing the Python package because the batch
 scripts set `PYTHONPATH` to the local `src` folder.
 
+## License
+
+DreamRender is released under the MIT License. See [LICENSE](LICENSE).
+
+Cinema 4D, Redshift, and Maxon product names belong to their respective owners.
+DreamRender does not include Cinema 4D, Redshift, plugins, render licenses, or
+third-party assets.
+
 ## Notes
 
 - Use regular Python 3.10 or newer from python.org. Do not use Cinema 4D
