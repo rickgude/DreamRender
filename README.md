@@ -161,6 +161,7 @@ It opens a submit dialog with:
 - read-only start and end frame from the selected render settings
 - frames per batch
 - optional marked-take submission
+- optional warning override
 - scene checker / preflight
 
 Start and end frame are read from Cinema 4D's active Render Settings frame
@@ -172,7 +173,8 @@ The submitter shows a table with Camera, Project, Textures, Render Engine,
 FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes,
 with status icons, separate columns for state, result, and info, alternating row
 backgrounds, and a small progress indicator while checks run. Errors block
-submit; warnings ask for confirmation.
+submit. Warnings ask for confirmation unless `Ignore warnings on submit` is
+enabled.
 
 Frames per batch controls how many contiguous frames a worker claims and renders
 per Cinema 4D commandline launch for that job. Higher values reduce scene reload
@@ -184,7 +186,9 @@ together in the dashboard, passes `-take "Take Name"` to Cinema 4D commandline,
 and preserves the output path exactly as it is set in Cinema 4D Render Settings.
 Cinema 4D tokens such as `$prj` and `$take` are passed through to Cinema 4D, and
 DreamRender expands the common tokens only when searching for dashboard previews.
-Marked takes must have unique names.
+Marked takes must have unique names. When marked takes use their own render
+settings, the submitter ignores the global render-settings dropdown and uses
+each take's render settings, output path, and frame range.
 
 The legacy `install-c4d-submitter-2026.bat` command now forwards to the plugin
 installer too, so existing shortcuts still install the plugin.

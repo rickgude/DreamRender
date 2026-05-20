@@ -41,6 +41,7 @@ IDC_START_LABEL = 1017
 IDC_END_LABEL = 1018
 IDC_CHECK_PROGRESS = 1019
 IDC_CHECK_TABLE = 1020
+IDC_IGNORE_WARNINGS = 1021
 
 CHECK_ERROR = "ERROR"
 CHECK_WARNING = "WARNING"
@@ -88,6 +89,31 @@ def frame_from_doc_time(doc, value):
     return frame_number(value, doc.GetFps())
 
 
+def get_render_range_from_render_data(doc, render_data):
+    fps = doc.GetFps()
+    data = render_data.GetData()
+    try:
+        sequence = data[c4d.RDATA_FRAMESEQUENCE]
+    except Exception:
+        sequence = c4d.RDATA_FRAMESEQUENCE_MANUAL
+
+    if sequence == c4d.RDATA_FRAMESEQUENCE_CURRENTFRAME:
+        frame = frame_from_doc_time(doc, doc.GetTime())
+        return frame, frame, "current"
+    if sequence == c4d.RDATA_FRAMESEQUENCE_ALLFRAMES:
+        start = frame_from_doc_time(doc, doc.GetMinTime())
+        end = frame_from_doc_time(doc, doc.GetMaxTime())
+        return start, end, "all"
+    if sequence == c4d.RDATA_FRAMESEQUENCE_PREVIEWRANGE:
+        start = frame_from_doc_time(doc, doc.GetLoopMinTime())
+        end = frame_from_doc_time(doc, doc.GetLoopMaxTime())
+        return start, end, "preview"
+
+    start = frame_number(data[c4d.RDATA_FRAMEFROM], fps)
+    end = frame_number(data[c4d.RDATA_FRAMETO], fps)
+    return start, end, "manual"
+
+
 def get_project_folder(doc):
     folder = doc.GetDocumentPath()
     if folder:
@@ -116,29 +142,7 @@ def save_current_document(doc):
 
 
 def get_render_range(doc):
-    fps = doc.GetFps()
-    render_data = doc.GetActiveRenderData()
-    data = render_data.GetData()
-    try:
-        sequence = data[c4d.RDATA_FRAMESEQUENCE]
-    except Exception:
-        sequence = c4d.RDATA_FRAMESEQUENCE_MANUAL
-
-    if sequence == c4d.RDATA_FRAMESEQUENCE_CURRENTFRAME:
-        frame = frame_from_doc_time(doc, doc.GetTime())
-        return frame, frame, "current"
-    if sequence == c4d.RDATA_FRAMESEQUENCE_ALLFRAMES:
-        start = frame_from_doc_time(doc, doc.GetMinTime())
-        end = frame_from_doc_time(doc, doc.GetMaxTime())
-        return start, end, "all"
-    if sequence == c4d.RDATA_FRAMESEQUENCE_PREVIEWRANGE:
-        start = frame_from_doc_time(doc, doc.GetLoopMinTime())
-        end = frame_from_doc_time(doc, doc.GetLoopMaxTime())
-        return start, end, "preview"
-
-    start = frame_number(data[c4d.RDATA_FRAMEFROM], fps)
-    end = frame_number(data[c4d.RDATA_FRAMETO], fps)
-    return start, end, "manual"
+    return get_render_range_from_render_data(doc, doc.GetActiveRenderData())
 
 
 def render_data_path(data, parameter_id):
@@ -166,7 +170,10 @@ def render_data_path(data, parameter_id):
 
 
 def get_output_path_info(doc):
-    render_data = doc.GetActiveRenderData()
+    return get_output_path_info_for_render_data(doc, doc.GetActiveRenderData())
+
+
+def get_output_path_info_for_render_data(doc, render_data):
     data = render_data.GetData()
     for label, parameter_id in (
         ("image", c4d.RDATA_PATH),
@@ -217,6 +224,8 @@ def active_camera_info(doc):
         camera = base_draw.GetSceneCamera(doc) if base_draw else None
         if camera is not None:
             name = camera.GetName() or "Scene Camera"
+            if name and name.lower() not in ("editor camera", "default camera"):
+                return CHECK_OK, "active scene camera", name
             try:
                 if camera.CheckType(c4d.Ocamera):
                     return CHECK_OK, "active scene camera", name
@@ -319,6 +328,33 @@ def get_marked_takes(doc):
         except Exception:
             pass
     return takes
+
+
+def get_take_render_data(doc, take):
+    for method_name in ("GetTakeRenderData", "GetRenderData"):
+        method = getattr(take, method_name, None)
+        if method is None:
+            continue
+        try:
+            if method_name == "GetRenderData":
+                render_data = method(doc.GetTakeData())
+            else:
+                render_data = method()
+        except Exception:
+            render_data = None
+        if render_data is not None:
+            return render_data
+    return doc.GetActiveRenderData()
+
+
+def marked_take_render_data(doc, takes):
+    return [get_take_render_data(doc, take) for take in takes]
+
+
+def marked_takes_have_different_render_settings(doc, takes):
+    render_data = marked_take_render_data(doc, takes)
+    active = doc.GetActiveRenderData()
+    return len(set(id(item) for item in render_data)) > 1 or any(item != active for item in render_data)
 
 
 def take_name(take):
@@ -548,7 +584,51 @@ def folder_for_output_path(output):
         return ""
     if os.path.splitext(output)[1]:
         return os.path.dirname(output)
+    if os.path.isdir(output):
+        return output
+    parent = os.path.dirname(output)
+    if parent:
+        return parent
     return output
+
+
+def output_folder_check(output):
+    output_folder = folder_for_output_path(output)
+    if not output:
+        return CHECK_ERROR, "empty output path", "Set Render Settings output"
+    if output_folder and has_c4d_tokens(output_folder):
+        return CHECK_OK, "Cinema 4D token path", output
+    if output_folder and os.path.isdir(output_folder):
+        if output_folder != output:
+            return CHECK_OK, "output folder exists", output_folder
+        return CHECK_OK, "folder exists", output_folder
+    if output_folder:
+        return CHECK_WARNING, "folder does not exist yet", output_folder
+    return CHECK_WARNING, "path has no folder", output
+
+
+def worst_level(levels):
+    if CHECK_ERROR in levels:
+        return CHECK_ERROR
+    if CHECK_WARNING in levels:
+        return CHECK_WARNING
+    return CHECK_OK
+
+
+def marked_take_output_check(doc, marked_takes):
+    levels = []
+    details = []
+    for take in marked_takes:
+        render_data = get_take_render_data(doc, take)
+        output, _source = get_output_path_info_for_render_data(doc, render_data)
+        level, message, detail = output_folder_check(output)
+        levels.append(level)
+        if level != CHECK_OK:
+            details.append("%s: %s" % (take_name(take), detail or message))
+    level = worst_level(levels or [CHECK_OK])
+    if level == CHECK_OK:
+        return CHECK_OK, "marked take outputs ready", "%d takes checked" % len(marked_takes)
+    return level, "marked take output issue", "; ".join(details[:3])
 
 
 def same_or_child(path, root):
@@ -681,6 +761,8 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
     document_folder = doc.GetDocumentPath()
     document_name = get_document_name(doc)
     project = get_project_folder(doc)
+    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
+    take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
 
     if document_folder:
         add_check(checks, CHECK_OK, "Scene has been saved", os.path.join(document_folder, document_name))
@@ -711,7 +793,9 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
         else:
             add_check(checks, CHECK_ERROR, "DreamRender job scene folder is not writable", "%s\n%s" % (jobs_root, reason))
 
-    if end < start:
+    if take_driven:
+        add_check(checks, CHECK_OK, "Frame ranges come from marked takes", "%d marked takes use their own render settings." % len(marked_takes))
+    elif end < start:
         add_check(checks, CHECK_ERROR, "Frame range is invalid", "End frame must be greater than or equal to start frame.")
     else:
         add_check(checks, CHECK_OK, "Frame range is valid", "%d-%d" % (start, end))
@@ -721,20 +805,15 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
     else:
         add_check(checks, CHECK_OK, "Frames per batch is valid", str(chunk_size))
 
-    if output:
-        output_folder = folder_for_output_path(output)
-        if output_folder and has_c4d_tokens(output_folder):
-            add_check(checks, CHECK_OK, "Output path uses Cinema 4D tokens", "Cinema 4D will resolve these at render time:\n%s" % output)
-        elif output_folder and os.path.isdir(output_folder):
-            add_check(checks, CHECK_OK, "Output folder exists", output_folder)
-        elif output_folder:
-            add_check(checks, CHECK_WARNING, "Output folder does not exist yet", output_folder)
-        else:
-            add_check(checks, CHECK_WARNING, "Output path has no folder", output)
+    if take_driven:
+        level, message, detail = marked_take_output_check(doc, marked_takes)
+        add_check(checks, level, message, detail)
+    elif output:
+        level, message, detail = output_folder_check(output)
+        add_check(checks, level, message, detail)
     else:
         add_check(checks, CHECK_ERROR, "Output path is empty", "Set an output path in Cinema 4D Render Settings.")
 
-    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
     if submit_marked_takes:
         if not marked_takes:
             add_check(checks, CHECK_ERROR, "No marked takes were found", "Mark takes in the Take Manager or disable marked-take submission.")
@@ -778,6 +857,8 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
 
 def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_marked_takes):
     rows = []
+    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
+    take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
     camera_level, camera_message, camera_info = active_camera_info(doc)
     add_report_row(rows, "CAMERA", camera_level, camera_message, camera_info)
 
@@ -817,18 +898,11 @@ def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_m
     fps_level, fps_message, fps_detail = fps_info(doc)
     add_report_row(rows, "FPS", fps_level, fps_message, fps_detail)
 
-    if output:
-        output_folder = folder_for_output_path(output)
-        if output_folder and has_c4d_tokens(output_folder):
-            add_report_row(rows, "OUTPUT", CHECK_OK, "Cinema 4D token path", output)
-        elif output_folder and os.path.isdir(output_folder):
-            add_report_row(rows, "OUTPUT", CHECK_OK, "folder exists", output)
-        elif output_folder:
-            add_report_row(rows, "OUTPUT", CHECK_WARNING, "folder does not exist yet", output_folder)
-        else:
-            add_report_row(rows, "OUTPUT", CHECK_WARNING, "path has no folder", output)
+    if take_driven:
+        output_level, output_message, output_detail = marked_take_output_check(doc, marked_takes)
     else:
-        add_report_row(rows, "OUTPUT", CHECK_ERROR, "empty output path", "Set Render Settings output")
+        output_level, output_message, output_detail = output_folder_check(output)
+    add_report_row(rows, "OUTPUT", output_level, output_message, output_detail)
 
     multipass_level, multipass_message, multipass_detail = multipass_info(doc)
     add_report_row(rows, "MULTIPASS", multipass_level, multipass_message, multipass_detail)
@@ -836,7 +910,9 @@ def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_m
     format_level, format_message, format_detail = format_info(doc, output)
     add_report_row(rows, "FORMAT", format_level, format_message, format_detail)
 
-    if end < start:
+    if take_driven:
+        add_report_row(rows, "FRAME", CHECK_OK, "marked take frame ranges", "%d takes use their own render settings" % len(marked_takes))
+    elif end < start:
         add_report_row(rows, "FRAME", CHECK_ERROR, "invalid range", "%d-%d" % (start, end))
     elif start == end:
         add_report_row(rows, "FRAME", CHECK_OK, "single frame", str(start))
@@ -863,7 +939,6 @@ def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_m
         add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share missing", "")
 
     if submit_marked_takes:
-        marked_takes = get_marked_takes(doc)
         if not marked_takes:
             add_report_row(rows, "TAKES", CHECK_ERROR, "no marked takes found", "")
         else:
@@ -872,7 +947,11 @@ def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_m
             if duplicates:
                 add_report_row(rows, "TAKES", CHECK_ERROR, "duplicate take names", ", ".join(duplicates))
             else:
-                add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes" % len(marked_takes))
+                render_data_names = sorted(set(render_data_name(item) for item in marked_take_render_data(doc, marked_takes)))
+                if len(render_data_names) > 1:
+                    add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes, %d render settings" % (len(marked_takes), len(render_data_names)))
+                else:
+                    add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes" % len(marked_takes))
     else:
         add_report_row(rows, "TAKES", CHECK_OK, "single render job", "marked takes disabled")
 
@@ -967,7 +1046,10 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddEditNumberArrows(IDC_CHUNK_SIZE, c4d.BFH_LEFT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Takes")
-        self.AddCheckbox(IDC_MARKED_TAKES, c4d.BFH_LEFT, initw=0, inith=0, name="Submit marked takes as a group")
+        self.AddCheckbox(IDC_MARKED_TAKES, c4d.BFH_LEFT, initw=0, inith=0, name="Render all marked takes")
+        self.AddStaticText(0, c4d.BFH_LEFT, name="")
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Warnings")
+        self.AddCheckbox(IDC_IGNORE_WARNINGS, c4d.BFH_LEFT, initw=0, inith=0, name="Ignore warnings on submit")
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Notes")
         self.AddEditText(IDC_NOTES, c4d.BFH_SCALEFIT)
@@ -992,7 +1074,9 @@ class DreamRenderDialog(gui.GeDialog):
         self.update_frame_labels()
         self.SetInt32(IDC_CHUNK_SIZE, int(self.config.get("chunk_size", 5)))
         self.SetBool(IDC_MARKED_TAKES, bool(self.config.get("marked_takes", False)))
+        self.SetBool(IDC_IGNORE_WARNINGS, bool(self.config.get("ignore_warnings", False)))
         self.SetString(IDC_NOTES, self.config.get("notes", ""))
+        self.update_take_mode_controls()
         self.run_scene_check(show_dialog=False)
         return True
 
@@ -1013,6 +1097,10 @@ class DreamRenderDialog(gui.GeDialog):
             return True
         if control_id == IDC_RENDER_SETTINGS:
             self.select_render_setting(self.GetInt32(IDC_RENDER_SETTINGS))
+            self.run_scene_check(show_dialog=False)
+            return True
+        if control_id == IDC_MARKED_TAKES:
+            self.update_take_mode_controls()
             self.run_scene_check(show_dialog=False)
             return True
         return True
@@ -1048,6 +1136,24 @@ class DreamRenderDialog(gui.GeDialog):
         self.SetString(IDC_END_LABEL, str(self.end))
         self.SetString(IDC_FRAME_SOURCE, "Frame source: %s" % self.frame_source)
 
+    def take_render_settings_are_driving(self):
+        if not self.GetBool(IDC_MARKED_TAKES):
+            return False
+        marked_takes = get_marked_takes(self.doc)
+        return bool(marked_takes) and marked_takes_have_different_render_settings(self.doc, marked_takes)
+
+    def update_take_mode_controls(self):
+        take_driven = self.take_render_settings_are_driving()
+        for control_id in (IDC_RENDER_SETTINGS, IDC_START_LABEL, IDC_END_LABEL, IDC_FRAME_SOURCE):
+            try:
+                self.Enable(control_id, not take_driven)
+            except Exception:
+                pass
+        if take_driven:
+            self.SetString(IDC_FRAME_SOURCE, "Frame source: marked takes use their own render settings")
+        else:
+            self.update_frame_labels()
+
     def collect_submit_values(self):
         share = self.GetString(IDC_SHARE).strip()
         name = self.GetString(IDC_NAME).strip() or os.path.splitext(get_document_name(self.doc))[0]
@@ -1057,14 +1163,16 @@ class DreamRenderDialog(gui.GeDialog):
         chunk_size = self.GetInt32(IDC_CHUNK_SIZE)
         submit_marked_takes = self.GetBool(IDC_MARKED_TAKES)
         notes = self.GetString(IDC_NOTES).strip()
-        return share, name, output, start, end, chunk_size, submit_marked_takes, notes
+        ignore_warnings = self.GetBool(IDC_IGNORE_WARNINGS)
+        return share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings
 
     def update_check_table(self, rows, current_index=-1, spinner=""):
         self.check_rows = rows
         self.check_table.set_rows(rows, current_index=current_index, spinner=spinner)
 
     def run_scene_check(self, show_dialog=True):
-        share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
+        self.update_take_mode_controls()
+        share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         report = format_scene_report(rows)
@@ -1079,7 +1187,7 @@ class DreamRenderDialog(gui.GeDialog):
                 c4d.EventAdd()
             except Exception:
                 pass
-            time.sleep(0.035)
+            time.sleep(0.085)
         self.update_check_table(rows)
         self.SetString(IDC_CHECK_PROGRESS, "Done: %d checks" % len(rows))
         self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
@@ -1088,7 +1196,7 @@ class DreamRenderDialog(gui.GeDialog):
         return checks
 
     def submit(self):
-        share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
+        share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         output_source = get_output_path_info(self.doc)[1]
         frame_source = self.frame_source
         chunk_size = max(1, self.GetInt32(IDC_CHUNK_SIZE))
@@ -1096,7 +1204,7 @@ class DreamRenderDialog(gui.GeDialog):
         if has_check_level(checks, CHECK_ERROR):
             gui.MessageDialog(format_checks(checks, "DreamRender cannot submit this scene yet"))
             return
-        if has_check_level(checks, CHECK_WARNING):
+        if has_check_level(checks, CHECK_WARNING) and not ignore_warnings:
             if not gui.QuestionDialog("%s\n\nSubmit anyway?" % format_checks(checks, "DreamRender found warnings")):
                 return
 
@@ -1119,6 +1227,7 @@ class DreamRenderDialog(gui.GeDialog):
 
         frames = list(range(start, end + 1))
         marked_takes = get_marked_takes(self.doc) if submit_marked_takes else []
+        take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(self.doc, marked_takes)
         if submit_marked_takes and not marked_takes:
             gui.MessageDialog("No marked takes were found. Mark the takes in the Take Manager or disable marked-take submission.")
             return
@@ -1135,12 +1244,22 @@ class DreamRenderDialog(gui.GeDialog):
                 job_ids = []
                 for index, take in enumerate(marked_takes, 1):
                     label = take_name(take)
+                    take_output = output
+                    take_frames = frames
+                    take_frame_source = frame_source
+                    take_render_setting = render_data_name(self.doc.GetActiveRenderData())
+                    if take_driven:
+                        take_render_data = get_take_render_data(self.doc, take)
+                        take_output = get_output_path_info_for_render_data(self.doc, take_render_data)[0]
+                        take_start, take_end, take_frame_source = get_render_range_from_render_data(self.doc, take_render_data)
+                        take_frames = list(range(take_start, take_end + 1))
+                        take_render_setting = render_data_name(take_render_data)
                     job_ids.append(
                         create_job(
                             share,
                             scene_path,
-                            output,
-                            frames,
+                            take_output,
+                            take_frames,
                             "%s - %s" % (name, label),
                             chunk_size,
                             notes,
@@ -1150,10 +1269,11 @@ class DreamRenderDialog(gui.GeDialog):
                                 "group_index": index,
                                 "group_size": len(marked_takes),
                                 "take_name": label,
+                                "take_render_setting": take_render_setting,
                                 "project_folder": project,
                                 "document_name": get_document_name(self.doc),
                                 "output_source": output_source,
-                                "frame_source": frame_source,
+                                "frame_source": take_frame_source,
                             },
                         )
                     )
@@ -1179,7 +1299,15 @@ class DreamRenderDialog(gui.GeDialog):
             gui.MessageDialog("Could not submit DreamRender job:\n%s" % exc)
             return
 
-        write_config({"share": share, "chunk_size": chunk_size, "notes": notes, "marked_takes": submit_marked_takes})
+        write_config(
+            {
+                "share": share,
+                "chunk_size": chunk_size,
+                "notes": notes,
+                "marked_takes": submit_marked_takes,
+                "ignore_warnings": ignore_warnings,
+            }
+        )
         if marked_takes:
             gui.MessageDialog("Submitted %d marked takes to DreamRender:\n%s\n\nScene copy:\n%s" % (len(job_ids), "\n".join(job_ids), scene_path))
         else:
