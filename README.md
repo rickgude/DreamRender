@@ -157,16 +157,14 @@ It opens a submit dialog with:
 
 - DreamRender share path
 - job name
-- render settings dropdown
-- read-only start and end frame from the selected render settings
 - frames per batch
-- optional marked-take submission
+- render all marked takes
 - optional warning override
 - scene checker / preflight
 
 Start and end frame are read from Cinema 4D's active Render Settings frame
 range. The submitter respects Manual, Current Frame, All Frames, and Preview
-Range modes, then shows the detected source beside the frame field.
+Range modes, then shows the detected range in the scene checker.
 
 Use `Check Scene` before submitting when you want a render-farm-style preflight.
 The submitter shows a table with Camera, Project, Textures, Render Engine,

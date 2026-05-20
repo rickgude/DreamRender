@@ -32,12 +32,8 @@ IDC_BROWSE_SHARE = 1008
 IDC_OPEN_DASHBOARD = 1009
 IDC_NOTES = 1010
 IDC_MARKED_TAKES = 1011
-IDC_RENDER_SETTINGS = 1012
-IDC_FRAME_SOURCE = 1013
 IDC_CHECK_SCENE = 1014
 IDC_CHECK_STATUS = 1016
-IDC_START_LABEL = 1017
-IDC_END_LABEL = 1018
 IDC_CHECK_PROGRESS = 1019
 IDC_CHECK_TABLE = 1020
 IDC_IGNORE_WARNINGS = 1021
@@ -188,19 +184,6 @@ def get_output_path_info_for_render_data(doc, render_data):
 
 def get_output_path(doc):
     return get_output_path_info(doc)[0]
-
-
-def iter_render_data(doc):
-    try:
-        render_data = doc.GetFirstRenderData()
-    except Exception:
-        render_data = None
-    while render_data is not None:
-        yield render_data
-        try:
-            render_data = render_data.GetNext()
-        except Exception:
-            break
 
 
 def render_data_name(render_data, fallback="Render Settings"):
@@ -1046,7 +1029,6 @@ class DreamRenderDialog(gui.GeDialog):
         self.doc = c4d.documents.GetActiveDocument()
         self.config = read_config()
         self.check_rows = []
-        self.render_settings = []
         self.check_table = SceneCheckTableArea()
         self.check_steps = []
         self.check_step_index = 0
@@ -1067,33 +1049,28 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddButton(IDC_CHECK_SCENE, c4d.BFH_SCALEFIT, name="Check Scene")
         self.AddButton(IDC_OPEN_DASHBOARD, c4d.BFH_SCALEFIT, name="Open Dashboard")
         self.AddSeparatorH(c4d.BFH_SCALEFIT)
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Queue")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Share")
         self.AddEditText(IDC_SHARE, c4d.BFH_SCALEFIT)
         self.AddButton(IDC_BROWSE_SHARE, c4d.BFH_LEFT, name="Browse")
+        self.AddSeparatorH(c4d.BFH_SCALEFIT)
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Job")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Job name")
         self.AddEditText(IDC_NAME, c4d.BFH_SCALEFIT)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Render settings")
-        self.AddComboBox(IDC_RENDER_SETTINGS, c4d.BFH_SCALEFIT, 260, 0)
-        self.GroupBegin(2004, c4d.BFH_SCALEFIT, 2, 0)
-        self.GroupSpace(12, 0)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Start frame")
-        self.AddStaticText(0, c4d.BFH_LEFT, name="End frame")
-        self.AddStaticText(IDC_START_LABEL, c4d.BFH_LEFT, initw=110, name="")
-        self.AddStaticText(IDC_END_LABEL, c4d.BFH_LEFT, initw=110, name="")
-        self.GroupEnd()
-        self.AddStaticText(IDC_FRAME_SOURCE, c4d.BFH_LEFT, name="")
+        self.AddSeparatorH(c4d.BFH_SCALEFIT)
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Batching")
         self.AddStaticText(0, c4d.BFH_LEFT, name="Frames per batch")
         self.AddEditNumberArrows(IDC_CHUNK_SIZE, c4d.BFH_LEFT)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="")
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Takes")
+        self.AddSeparatorH(c4d.BFH_SCALEFIT)
+        self.GroupBegin(2004, c4d.BFH_SCALEFIT, 1, 0, title="Takes")
+        self.GroupBorderSpace(6, 6, 6, 6)
         self.AddCheckbox(IDC_MARKED_TAKES, c4d.BFH_LEFT, initw=0, inith=0, name="Render all marked takes")
-        self.AddStaticText(0, c4d.BFH_LEFT, name="")
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Warnings")
-        self.AddCheckbox(IDC_IGNORE_WARNINGS, c4d.BFH_LEFT, initw=0, inith=0, name="Ignore warnings on submit")
-        self.AddStaticText(0, c4d.BFH_LEFT, name="")
+        self.GroupEnd()
+        self.AddSeparatorH(c4d.BFH_SCALEFIT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="Notes")
         self.AddEditText(IDC_NOTES, c4d.BFH_SCALEFIT)
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
+        self.AddCheckbox(IDC_IGNORE_WARNINGS, c4d.BFH_LEFT, initw=0, inith=0, name="Ignore warnings on submit")
         self.AddButton(IDC_SUBMIT, c4d.BFH_SCALEFIT, name="Submit Project")
         self.GroupEnd()
         self.GroupBegin(2002, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0, title="Scene Check")
@@ -1110,13 +1087,10 @@ class DreamRenderDialog(gui.GeDialog):
     def InitValues(self):
         self.SetString(IDC_SHARE, self.config.get("share", DEFAULT_SHARE))
         self.SetString(IDC_NAME, os.path.splitext(get_document_name(self.doc))[0])
-        self.refresh_render_settings()
-        self.update_frame_labels()
         self.SetInt32(IDC_CHUNK_SIZE, int(self.config.get("chunk_size", 5)))
         self.SetBool(IDC_MARKED_TAKES, bool(self.config.get("marked_takes", False)))
         self.SetBool(IDC_IGNORE_WARNINGS, bool(self.config.get("ignore_warnings", False)))
         self.SetString(IDC_NOTES, self.config.get("notes", ""))
-        self.update_take_mode_controls()
         self.start_scene_check_animation()
         return True
 
@@ -1135,68 +1109,15 @@ class DreamRenderDialog(gui.GeDialog):
         if control_id == IDC_CHECK_SCENE:
             self.start_scene_check_animation()
             return True
-        if control_id == IDC_RENDER_SETTINGS:
-            self.select_render_setting(self.GetInt32(IDC_RENDER_SETTINGS))
-            self.start_scene_check_animation()
-            return True
         if control_id == IDC_MARKED_TAKES:
-            self.update_take_mode_controls()
             self.start_scene_check_animation()
             return True
         return True
 
-    def refresh_render_settings(self):
-        self.render_settings = list(iter_render_data(self.doc))
-        active = self.doc.GetActiveRenderData()
-        active_index = 0
-        try:
-            self.FreeChildren(IDC_RENDER_SETTINGS)
-        except Exception:
-            pass
-        for index, render_data in enumerate(self.render_settings):
-            if render_data == active:
-                active_index = index
-            self.AddChild(IDC_RENDER_SETTINGS, index, render_data_name(render_data, "Render Settings %d" % (index + 1)))
-        if self.render_settings:
-            self.SetInt32(IDC_RENDER_SETTINGS, active_index)
-
-    def select_render_setting(self, index):
-        if index < 0 or index >= len(self.render_settings):
-            return
-        render_data = self.render_settings[index]
-        try:
-            self.doc.SetActiveRenderData(render_data)
-        except Exception:
-            pass
-        self.start, self.end, self.frame_source = get_render_range(self.doc)
-        self.update_frame_labels()
-
-    def update_frame_labels(self):
-        self.SetString(IDC_START_LABEL, str(self.start))
-        self.SetString(IDC_END_LABEL, str(self.end))
-        self.SetString(IDC_FRAME_SOURCE, "Frame source: %s" % self.frame_source)
-
-    def take_render_settings_are_driving(self):
-        if not self.GetBool(IDC_MARKED_TAKES):
-            return False
-        marked_takes = get_marked_takes(self.doc)
-        return bool(marked_takes) and marked_takes_have_different_render_settings(self.doc, marked_takes)
-
-    def update_take_mode_controls(self):
-        take_driven = self.take_render_settings_are_driving()
-        for control_id in (IDC_RENDER_SETTINGS, IDC_START_LABEL, IDC_END_LABEL, IDC_FRAME_SOURCE):
-            try:
-                self.Enable(control_id, not take_driven)
-            except Exception:
-                pass
-        if take_driven:
-            self.SetString(IDC_FRAME_SOURCE, "Frame source: marked takes use their own render settings")
-        else:
-            self.update_frame_labels()
-
     def collect_submit_values(self):
         share = self.GetString(IDC_SHARE).strip()
         name = self.GetString(IDC_NAME).strip() or os.path.splitext(get_document_name(self.doc))[0]
+        self.start, self.end, self.frame_source = get_render_range(self.doc)
         output = get_output_path_info(self.doc)[0]
         start = self.start
         end = self.end
@@ -1212,7 +1133,6 @@ class DreamRenderDialog(gui.GeDialog):
 
     def start_scene_check_animation(self):
         self.SetTimer(0)
-        self.update_take_mode_controls()
         share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         self.check_steps = scene_report_step_builders(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         self.check_step_index = 0
@@ -1251,7 +1171,6 @@ class DreamRenderDialog(gui.GeDialog):
             self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
 
     def run_scene_check(self, show_dialog=True):
-        self.update_take_mode_controls()
         share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
