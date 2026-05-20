@@ -1,11 +1,13 @@
 # DreamRender
 
-DreamRender is a lightweight render queue for small Cinema 4D 2026 + Redshift
-setups. It is built for artists who have a few powerful machines at home or in a
-small studio and want any available machine to pick up frames automatically.
+DreamRender is lightweight render farm software for small Cinema 4D 2026 +
+Redshift setups. It is built for artists who have a few powerful machines at
+home or in a small studio and want any available machine to pick up frames
+automatically.
 
-The queue is folder-based. Every machine points to the same DreamRender share,
-and workers join or leave without a database server.
+It follows a Deadline-style render manager workflow, but keeps the architecture
+simple: every machine points to the same DreamRender share, and workers join or
+leave without a database server.
 
 ## Start Here
 

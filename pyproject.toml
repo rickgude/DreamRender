@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dreamrender"
 version = "0.1.0"
-description = "A lightweight Cinema 4D + Redshift render queue."
+description = "Lightweight render farm software for Cinema 4D + Redshift."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "DreamRender" }]
