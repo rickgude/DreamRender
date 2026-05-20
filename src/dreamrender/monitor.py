@@ -128,7 +128,7 @@ HTML = r"""<!doctype html>
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
     .job-progress {
-      width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 14px;
+      width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 20px;
       background: #e7eee9; border-radius: 999px; overflow: hidden;
     }
     .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 999px; }
@@ -497,7 +497,7 @@ HTML = r"""<!doctype html>
             <div class="job-progress"><div class="bar" style="width:${j.progress}%"></div></div>
             <div class="job-detail-lines">
               <div class="meta">${esc((j.metadata || {}).take_name ? `Take: ${(j.metadata || {}).take_name}` : j.scene)}</div>
-              <div class="meta">${esc(j.output)}</div>
+              <div class="meta">${esc(j.display_output || j.output)}</div>
             </div>
           </div>
           <div class="actions" onclick="event.stopPropagation()">

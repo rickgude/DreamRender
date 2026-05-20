@@ -565,6 +565,8 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
     total = sum(counts.values())
     done = counts.get("done", 0)
     stats = calculate_job_stats(job, frames)
+    output_paths = expand_c4d_output_path(job)
+    display_output = str(output_paths[1] if len(output_paths) > 1 else output_paths[0]) if output_paths else job.get("output")
     return {
         "id": job["id"],
         "name": job["name"],
@@ -572,6 +574,7 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
         "created_at": job.get("created_at"),
         "scene": job.get("scene"),
         "output": job.get("output"),
+        "display_output": display_output,
         "path_mode": job.get("path_mode"),
         "priority": int(job.get("priority", 5000)),
         "metadata": job.get("metadata", {}),
