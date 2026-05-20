@@ -441,6 +441,8 @@ class SceneCheckTableArea(gui.GeUserArea):
         self._height = self.MIN_H
         self._scroll_x = 0
         self._scroll_y = 0
+        self._drag = None
+        self.dialog = None
 
     def GetMinSize(self):
         return self.MIN_W, self.MIN_H
@@ -479,16 +481,28 @@ class SceneCheckTableArea(gui.GeUserArea):
     def InputEvent(self, msg):
         if msg.GetInt32(c4d.BFM_INPUT_DEVICE) != c4d.BFM_INPUT_MOUSE:
             return False
+        channel = msg.GetInt32(c4d.BFM_INPUT_CHANNEL)
         position = self._event_position(msg)
         if position:
             x, y = position
-            if self._max_scroll_x() > 0 and y >= self._height - self.SCROLL_H:
-                channel = msg.GetInt32(c4d.BFM_INPUT_CHANNEL)
-                if channel == c4d.BFM_INPUT_MOUSELEFT and msg.GetInt32(c4d.BFM_INPUT_VALUE) != 0:
-                    ratio = max(0.0, min(1.0, float(x) / float(max(1, self._width - self.SCROLL_W))))
-                    self._set_scroll_x(int(ratio * self._max_scroll_x()))
+            if channel == c4d.BFM_INPUT_MOUSELEFT:
+                if msg.GetInt32(c4d.BFM_INPUT_VALUE) == 0:
+                    if self._drag is not None:
+                        self._drag = None
+                        return True
+                elif self._drag is not None:
+                    self._update_scroll_drag(x, y)
                     return True
-        channel = msg.GetInt32(c4d.BFM_INPUT_CHANNEL)
+                elif self._hit_v_scrollbar(x, y):
+                    self._handle_v_scroll_click(y)
+                    return True
+                elif self._hit_h_scrollbar(x, y):
+                    self._handle_h_scroll_click(x)
+                    return True
+            move_channel = getattr(c4d, "BFM_INPUT_MOUSEMOVE", None)
+            if move_channel is not None and channel == move_channel and self._drag is not None:
+                self._update_scroll_drag(x, y)
+                return True
         wheel_channel = getattr(c4d, "BFM_INPUT_MOUSEWHEEL", None)
         if wheel_channel is not None and channel == wheel_channel:
             delta = msg.GetInt32(c4d.BFM_INPUT_VALUE)
@@ -498,6 +512,59 @@ class SceneCheckTableArea(gui.GeUserArea):
                 self._set_scroll_y(self._scroll_y + self.ROW_H * 2)
             return True
         return False
+
+    def Message(self, msg, result):
+        if msg.GetId() == c4d.BFM_INPUT:
+            if self.InputEvent(msg):
+                return True
+        return super(SceneCheckTableArea, self).Message(msg, result)
+
+    def poll_drag(self):
+        if self._drag is None:
+            return False
+        state = self._mouse_state()
+        if state is None:
+            self._drag = None
+            return False
+        down, x, y = state
+        if not down:
+            self._drag = None
+            return False
+        self._update_scroll_drag(x, y)
+        return True
+
+    def is_dragging(self):
+        return self._drag is not None
+
+    def _ensure_timer(self):
+        dialog = getattr(self, "dialog", None)
+        if dialog is None:
+            return
+        try:
+            dialog.SetTimer(20)
+        except Exception:
+            pass
+
+    def _mouse_state(self):
+        result = c4d.BaseContainer()
+        try:
+            ok = self.GetInputState(c4d.BFM_INPUT_MOUSE, c4d.BFM_INPUT_MOUSELEFT, result)
+        except Exception:
+            return None
+        if not ok:
+            return None
+        down = bool(result.GetInt32(c4d.BFM_INPUT_VALUE))
+        move = c4d.BaseContainer()
+        try:
+            if self.GetInputState(c4d.BFM_INPUT_MOUSE, c4d.BFM_INPUT_MOUSEMOVE, move):
+                if move.GetInt32(c4d.BFM_INPUT_X) or move.GetInt32(c4d.BFM_INPUT_Y):
+                    result = move
+        except Exception:
+            pass
+        position = self._event_position(result)
+        if position is None:
+            return None
+        return down, position[0], position[1]
 
     def _event_position(self, msg):
         try:
@@ -510,12 +577,27 @@ class SceneCheckTableArea(gui.GeUserArea):
             if converter is None:
                 continue
             try:
-                result = converter()
+                result = converter(x, y)
+                if isinstance(result, dict):
+                    return int(result.get("x", 0)), int(result.get("y", 0))
                 if isinstance(result, tuple):
                     if len(result) == 2:
-                        return int(x - result[0]), int(y - result[1])
+                        return int(result[0]), int(result[1])
                     if len(result) >= 3:
                         return int(result[1]), int(result[2])
+            except TypeError:
+                try:
+                    offset = converter()
+                    if isinstance(offset, dict):
+                        candidates = (
+                            (x + int(offset.get("x", 0)), y + int(offset.get("y", 0))),
+                            (x - int(offset.get("x", 0)), y - int(offset.get("y", 0))),
+                        )
+                        for cx, cy in candidates:
+                            if 0 <= cx <= self._width and 0 <= cy <= self._height:
+                                return int(cx), int(cy)
+                except Exception:
+                    pass
             except Exception:
                 pass
         return int(x), int(y)
@@ -615,23 +697,110 @@ class SceneCheckTableArea(gui.GeUserArea):
 
     def _draw_scrollbars(self, width, height):
         if self._max_scroll_y() > 0:
-            track_x1 = width - self.SCROLL_W
-            track_y1 = self.HEADER_H
-            track_y2 = height - self.SCROLL_H
-            self._fill(track_x1, track_y1, width, track_y2, (0.090, 0.092, 0.098))
-            usable = max(1, track_y2 - track_y1 - 24)
-            thumb_h = max(24, int((self._visible_height() / float(max(1, self._content_height()))) * (track_y2 - track_y1)))
-            thumb_y = track_y1 + int((self._scroll_y / float(max(1, self._max_scroll_y()))) * usable)
-            self._fill(track_x1 + 2, thumb_y, width - 3, thumb_y + thumb_h, (0.32, 0.34, 0.35))
+            track_x1, track_y1, track_x2, track_y2 = self._v_scroll_track(width, height)
+            thumb_x1, thumb_y1, thumb_x2, thumb_y2 = self._v_thumb_rect(width, height)
+            self._fill(track_x1, track_y1, track_x2, track_y2, (0.090, 0.092, 0.098))
+            self._fill(thumb_x1, thumb_y1, thumb_x2, thumb_y2, (0.32, 0.34, 0.35))
         if self._max_scroll_x() > 0:
-            track_x1 = 0
-            track_x2 = width - self.SCROLL_W
-            track_y1 = height - self.SCROLL_H
-            self._fill(track_x1, track_y1, track_x2, height, (0.090, 0.092, 0.098))
-            usable = max(1, track_x2 - track_x1 - 36)
-            thumb_w = max(36, int((self._visible_width() / float(max(1, self.CONTENT_W))) * (track_x2 - track_x1)))
-            thumb_x = track_x1 + int((self._scroll_x / float(max(1, self._max_scroll_x()))) * usable)
-            self._fill(thumb_x, track_y1 + 2, thumb_x + thumb_w, height - 3, (0.32, 0.34, 0.35))
+            track_x1, track_y1, track_x2, track_y2 = self._h_scroll_track(width, height)
+            thumb_x1, thumb_y1, thumb_x2, thumb_y2 = self._h_thumb_rect(width, height)
+            self._fill(track_x1, track_y1, track_x2, track_y2, (0.090, 0.092, 0.098))
+            self._fill(thumb_x1, thumb_y1, thumb_x2, thumb_y2, (0.32, 0.34, 0.35))
+
+    def _v_scroll_track(self, width=None, height=None):
+        width = self._width if width is None else int(width)
+        height = self._height if height is None else int(height)
+        return width - self.SCROLL_W, self.HEADER_H, width, height - self.SCROLL_H
+
+    def _h_scroll_track(self, width=None, height=None):
+        width = self._width if width is None else int(width)
+        height = self._height if height is None else int(height)
+        return 0, height - self.SCROLL_H, width - self.SCROLL_W, height
+
+    def _v_thumb_rect(self, width=None, height=None):
+        track_x1, track_y1, track_x2, track_y2 = self._v_scroll_track(width, height)
+        track_h = max(1, track_y2 - track_y1)
+        content_h = max(1, self._content_height())
+        thumb_h = max(24, int(float(self._visible_height()) * track_h / float(content_h)))
+        thumb_h = min(track_h, thumb_h)
+        usable = max(1, track_h - thumb_h)
+        thumb_y = track_y1 + int(float(self._scroll_y) / float(max(1, self._max_scroll_y())) * usable)
+        return track_x1 + 2, thumb_y, track_x2 - 3, thumb_y + thumb_h
+
+    def _h_thumb_rect(self, width=None, height=None):
+        track_x1, track_y1, track_x2, track_y2 = self._h_scroll_track(width, height)
+        track_w = max(1, track_x2 - track_x1)
+        thumb_w = max(36, int(float(self._visible_width()) * track_w / float(max(1, self.CONTENT_W))))
+        thumb_w = min(track_w, thumb_w)
+        usable = max(1, track_w - thumb_w)
+        thumb_x = track_x1 + int(float(self._scroll_x) / float(max(1, self._max_scroll_x())) * usable)
+        return thumb_x, track_y1 + 2, thumb_x + thumb_w, track_y2 - 3
+
+    def _hit_v_scrollbar(self, x, y):
+        if self._max_scroll_y() <= 0:
+            return False
+        track_x1, track_y1, track_x2, track_y2 = self._v_scroll_track()
+        return track_x1 <= x <= track_x2 and track_y1 <= y <= track_y2
+
+    def _hit_h_scrollbar(self, x, y):
+        if self._max_scroll_x() <= 0:
+            return False
+        track_x1, track_y1, track_x2, track_y2 = self._h_scroll_track()
+        return track_x1 <= x <= track_x2 and track_y1 <= y <= track_y2
+
+    def _in_rect(self, x, y, rect):
+        x1, y1, x2, y2 = rect
+        return x1 <= x <= x2 and y1 <= y <= y2
+
+    def _handle_v_scroll_click(self, y):
+        thumb = self._v_thumb_rect()
+        if self._in_rect(self._width - self.SCROLL_W + 1, y, thumb):
+            self._drag = {
+                "kind": "vscroll",
+                "mouse": float(y),
+                "scroll": self._scroll_y,
+            }
+            self._ensure_timer()
+            return
+        page = max(1, self._visible_height() - self.HEADER_H - self.ROW_H)
+        if y < thumb[1]:
+            self._set_scroll_y(self._scroll_y - page)
+        else:
+            self._set_scroll_y(self._scroll_y + page)
+
+    def _handle_h_scroll_click(self, x):
+        thumb = self._h_thumb_rect()
+        if self._in_rect(x, self._height - self.SCROLL_H + 1, thumb):
+            self._drag = {
+                "kind": "hscroll",
+                "mouse": float(x),
+                "scroll": self._scroll_x,
+            }
+            self._ensure_timer()
+            return
+        page = max(1, self._visible_width() - 80)
+        if x < thumb[0]:
+            self._set_scroll_x(self._scroll_x - page)
+        else:
+            self._set_scroll_x(self._scroll_x + page)
+
+    def _update_scroll_drag(self, x, y):
+        if self._drag is None:
+            return
+        if self._drag.get("kind") == "vscroll":
+            _tx1, track_y1, _tx2, track_y2 = self._v_scroll_track()
+            _x1, thumb_y1, _x2, thumb_y2 = self._v_thumb_rect()
+            usable = max(1, (track_y2 - track_y1) - max(1, thumb_y2 - thumb_y1))
+            dy = float(y) - float(self._drag.get("mouse", y))
+            delta = int(dy * float(self._max_scroll_y()) / float(usable))
+            self._set_scroll_y(int(self._drag.get("scroll", 0)) + delta)
+        elif self._drag.get("kind") == "hscroll":
+            track_x1, _ty1, track_x2, _ty2 = self._h_scroll_track()
+            thumb_x1, _y1, thumb_x2, _y2 = self._h_thumb_rect()
+            usable = max(1, (track_x2 - track_x1) - max(1, thumb_x2 - thumb_x1))
+            dx = float(x) - float(self._drag.get("mouse", x))
+            delta = int(dx * float(self._max_scroll_x()) / float(usable))
+            self._set_scroll_x(int(self._drag.get("scroll", 0)) + delta)
 
     def _text(self, text, x, y, color, bold=False, bg=None):
         self.DrawSetFont(c4d.FONT_BOLD if bold else c4d.FONT_STANDARD)
@@ -1132,6 +1301,7 @@ class DreamRenderDialog(gui.GeDialog):
         self.config = read_config()
         self.check_rows = []
         self.check_table = SceneCheckTableArea()
+        self.check_table.dialog = self
         self.check_steps = []
         self.check_step_index = 0
         self.check_step_phase = ""
@@ -1245,8 +1415,9 @@ class DreamRenderDialog(gui.GeDialog):
         self.SetTimer(95)
 
     def Timer(self, msg):
+        dragging = self.check_table.poll_drag()
         if not self.check_steps or self.check_step_index >= len(self.check_steps):
-            self.SetTimer(0)
+            self.SetTimer(20 if dragging or self.check_table.is_dragging() else 0)
             return
         label, build_row = self.check_steps[self.check_step_index]
         spinner_frames = ("◐", "◓", "◑", "◒")
