@@ -445,9 +445,23 @@ HTML = r"""<!doctype html>
         byId.get(meta.group_id).jobs.push(job);
       }
       for (const group of groups) {
-        group.jobs.sort((a, b) => (a.priority ?? 5000) - (b.priority ?? 5000) || ((a.metadata || {}).group_index || 0) - ((b.metadata || {}).group_index || 0));
+        group.jobs.sort(compareJobsForDisplay);
       }
+      standalone.sort(compareJobsForDisplay);
       return { groups, standalone };
+    }
+    function displayRank(job) {
+      const counts = job.counts || {};
+      if ((counts.rendering || 0) > 0) return 0;
+      if ((counts.failed || 0) > 0 || job.status === "cancelled") return 1;
+      if (job.status === "queued" || job.status === "paused" || job.status === "draining") return 2;
+      if (job.status === "done" || job.status === "archived") return 3;
+      return 4;
+    }
+    function compareJobsForDisplay(a, b) {
+      return displayRank(a) - displayRank(b)
+        || (a.priority ?? 5000) - (b.priority ?? 5000)
+        || ((a.metadata || {}).group_index || 0) - ((b.metadata || {}).group_index || 0);
     }
     function groupProgress(group) {
       const frames = group.jobs.reduce((sum, job) => sum + Object.values(job.counts || {}).reduce((a, b) => a + b, 0), 0);
