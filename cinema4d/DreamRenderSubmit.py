@@ -91,6 +91,19 @@ def get_document_name(doc):
     return name
 
 
+def save_current_document(doc):
+    folder = doc.GetDocumentPath()
+    if not folder:
+        gui.MessageDialog("Save the Cinema 4D scene once before submitting to DreamRender.")
+        return False
+    source_path = os.path.join(folder, get_document_name(doc))
+    flags = c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST
+    if not c4d.documents.SaveDocument(doc, source_path, flags, c4d.FORMAT_C4DEXPORT):
+        gui.MessageDialog("Cinema 4D could not save the current scene before submitting:\n%s" % source_path)
+        return False
+    return True
+
+
 def get_render_range(doc):
     fps = doc.GetFps()
     render_data = doc.GetActiveRenderData()
@@ -337,6 +350,9 @@ class DreamRenderDialog(gui.GeDialog):
         if output_folder and not has_c4d_tokens(output_folder) and not os.path.isdir(output_folder):
             if not gui.QuestionDialog("Output folder does not exist yet:\n%s\n\nSubmit anyway?" % output_folder):
                 return
+
+        if not save_current_document(self.doc):
+            return
 
         project = get_project_folder(self.doc)
         jobs_root = os.path.join(project, DEFAULT_JOB_FOLDER)

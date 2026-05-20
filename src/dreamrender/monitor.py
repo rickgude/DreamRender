@@ -161,11 +161,12 @@ HTML = r"""<!doctype html>
     .frame.failed { background: rgba(236, 108, 121, .20); border-color: rgba(236, 108, 121, .65); color: #96323d; }
     .frame.queued { background: #e8ede9; }
     .frame.worker-owned {
-      background: var(--worker-color);
+      background: color-mix(in srgb, var(--worker-color) 28%, white);
       border-color: transparent;
       color: var(--ink);
     }
     .frame.rendering.worker-owned {
+      background: var(--worker-color);
       border-color: transparent;
       box-shadow: none;
     }
