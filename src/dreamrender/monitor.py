@@ -119,6 +119,8 @@ HTML = r"""<!doctype html>
     .job-status.failed { background: var(--bad); border-color: var(--bad); color: white; }
     .job-status.queued { background: #e8ede9; border-color: #d9e0dc; color: #555e5d; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .job-head-main { display: grid; gap: 10px; }
+    .job-detail-lines { display: grid; gap: 3px; }
     .actions { display: flex; align-items: start; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     button {
       height: 38px; border: 1px solid var(--line); border-radius: 999px;
@@ -128,7 +130,7 @@ HTML = r"""<!doctype html>
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
     .job-progress {
-      width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 20px;
+      width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 6px;
       background: #e7eee9; border-radius: 999px; overflow: hidden;
     }
     .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 999px; }
@@ -488,7 +490,7 @@ HTML = r"""<!doctype html>
       const [statusClass, statusLabel] = jobState(j);
       return `<article class="job ${collapsed ? "collapsed" : ""}" style="--job-color:${statusColor(statusClass)}" data-job-id="${esc(j.id)}" data-priority="${esc(j.priority ?? 5000)}">
         <div class="job-head" onclick="toggleJob('${j.id}')">
-          <div>
+          <div class="job-head-main">
             <div class="job-title-row">
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
               <div class="job-title">${esc(j.name)}</div>
