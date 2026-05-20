@@ -34,6 +34,11 @@ IDC_NOTES = 1010
 IDC_MARKED_TAKES = 1011
 IDC_OUTPUT_SOURCE = 1012
 IDC_FRAME_SOURCE = 1013
+IDC_CHECK_SCENE = 1014
+
+CHECK_ERROR = "ERROR"
+CHECK_WARNING = "WARNING"
+CHECK_OK = "OK"
 
 
 def utc_now():
@@ -210,6 +215,281 @@ def has_c4d_tokens(value):
     return "$" in value
 
 
+def add_check(checks, level, title, detail=""):
+    checks.append({"level": level, "title": title, "detail": detail})
+
+
+def checks_with_level(checks, level):
+    return [item for item in checks if item["level"] == level]
+
+
+def has_check_level(checks, level):
+    return bool(checks_with_level(checks, level))
+
+
+def check_summary_line(checks):
+    errors = len(checks_with_level(checks, CHECK_ERROR))
+    warnings = len(checks_with_level(checks, CHECK_WARNING))
+    ok = len(checks_with_level(checks, CHECK_OK))
+    return "%d errors, %d warnings, %d checks passed" % (errors, warnings, ok)
+
+
+def format_checks(checks, title="DreamRender Scene Check"):
+    lines = [title, check_summary_line(checks), ""]
+    sections = (
+        (CHECK_ERROR, "Errors"),
+        (CHECK_WARNING, "Warnings"),
+        (CHECK_OK, "Passed"),
+    )
+    for level, label in sections:
+        items = checks_with_level(checks, level)
+        if not items:
+            continue
+        lines.append(label)
+        visible = items[:12]
+        for item in visible:
+            lines.append("- %s" % item["title"])
+            if item["detail"]:
+                lines.append("  %s" % item["detail"])
+        if len(items) > len(visible):
+            lines.append("- ...and %d more" % (len(items) - len(visible)))
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def folder_for_output_path(output):
+    if not output:
+        return ""
+    if os.path.splitext(output)[1]:
+        return os.path.dirname(output)
+    return output
+
+
+def same_or_child(path, root):
+    if not path or not root:
+        return False
+    try:
+        path = os.path.normcase(os.path.abspath(path))
+        root = os.path.normcase(os.path.abspath(root))
+        return path == root or path.startswith(root + os.sep)
+    except Exception:
+        return False
+
+
+def is_local_asset_path(path):
+    if not path:
+        return False
+    text = str(path).strip()
+    lowered = text.lower()
+    if not text or has_c4d_tokens(text):
+        return False
+    if "://" in lowered and not lowered.startswith("file://"):
+        return False
+    if lowered.startswith(("asset:", "maxon:", "tex/")):
+        return False
+    return os.path.isabs(text)
+
+
+def normalize_asset_path(path, project):
+    if not path:
+        return ""
+    text = str(path).strip()
+    if has_c4d_tokens(text):
+        return text
+    if text.lower().startswith("file://"):
+        text = text[7:]
+        if text.startswith("/") and len(text) > 3 and text[2] == ":":
+            text = text[1:]
+    if os.path.isabs(text):
+        return text
+    if project and text and "://" not in text:
+        return os.path.join(project, text)
+    return text
+
+
+def probe_writable_folder(folder, create=False):
+    if not folder:
+        return False, "No folder path."
+    try:
+        if create and not os.path.isdir(folder):
+            os.makedirs(folder)
+        if not os.path.isdir(folder):
+            return False, "Folder does not exist."
+        probe = os.path.join(folder, ".dreamrender_write_%s.tmp" % uuid.uuid4().hex)
+        with open(probe, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        os.remove(probe)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+def asset_text(asset, keys):
+    if not isinstance(asset, dict):
+        return ""
+    for key in keys:
+        try:
+            value = asset.get(key)
+        except Exception:
+            value = None
+        if value:
+            return str(value)
+    return ""
+
+
+def asset_exists(asset, path, project):
+    if isinstance(asset, dict):
+        for key in ("exists", "existsOnDisk", "found", "isFound"):
+            if key in asset:
+                try:
+                    return bool(asset.get(key))
+                except Exception:
+                    pass
+    normalized = normalize_asset_path(path, project)
+    if is_local_asset_path(normalized):
+        return os.path.exists(normalized)
+    return True
+
+
+def collect_scene_assets(doc):
+    assets = []
+    documents = c4d.documents
+    flags = 0
+    try:
+        flags = c4d.ASSETDATA_FLAG_TEXTURESONLY
+    except Exception:
+        pass
+
+    last_error = None
+    if hasattr(documents, "GetAllAssetsNew"):
+        try:
+            result = documents.GetAllAssetsNew(doc, False, "", flags, assets)
+            failed = getattr(c4d, "GETALLASSETSRESULT_FAILED", None)
+            if failed is not None and result == failed:
+                return [], "Cinema 4D asset collection failed."
+            return assets, None
+        except Exception as exc:
+            last_error = exc
+
+    if hasattr(documents, "GetAllAssets"):
+        try:
+            result = documents.GetAllAssets(doc, False, "", flags)
+            if result is None:
+                return [], "Cinema 4D asset collection failed."
+            return result, None
+        except Exception as exc:
+            last_error = exc
+        try:
+            result = documents.GetAllAssets(doc, False, "")
+            if result is None:
+                return [], "Cinema 4D asset collection failed."
+            return result, None
+        except Exception as exc:
+            last_error = exc
+
+    return [], last_error or "Cinema 4D asset API is not available."
+
+
+def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_takes):
+    checks = []
+    document_folder = doc.GetDocumentPath()
+    document_name = get_document_name(doc)
+    project = get_project_folder(doc)
+
+    if document_folder:
+        add_check(checks, CHECK_OK, "Scene has been saved", os.path.join(document_folder, document_name))
+    else:
+        add_check(checks, CHECK_ERROR, "Scene has not been saved", "Save the Cinema 4D document once before submitting.")
+
+    if share and os.path.isdir(share):
+        writable, reason = probe_writable_folder(share)
+        if writable:
+            add_check(checks, CHECK_OK, "DreamRender share is writable", share)
+        else:
+            add_check(checks, CHECK_ERROR, "DreamRender share is not writable", "%s\n%s" % (share, reason))
+    elif share:
+        add_check(checks, CHECK_ERROR, "DreamRender share is not accessible", share)
+    else:
+        add_check(checks, CHECK_ERROR, "DreamRender share is missing", "Choose the shared DreamRender queue folder.")
+
+    if document_folder:
+        jobs_root = os.path.join(project, DEFAULT_JOB_FOLDER)
+        if os.path.isdir(jobs_root):
+            writable, reason = probe_writable_folder(jobs_root)
+            detail = jobs_root
+        else:
+            writable, reason = probe_writable_folder(project)
+            detail = "%s can be created in %s" % (DEFAULT_JOB_FOLDER, project)
+        if writable:
+            add_check(checks, CHECK_OK, "DreamRender job scene folder is writable", detail)
+        else:
+            add_check(checks, CHECK_ERROR, "DreamRender job scene folder is not writable", "%s\n%s" % (jobs_root, reason))
+
+    if end < start:
+        add_check(checks, CHECK_ERROR, "Frame range is invalid", "End frame must be greater than or equal to start frame.")
+    else:
+        add_check(checks, CHECK_OK, "Frame range is valid", "%d-%d" % (start, end))
+
+    if chunk_size < 1:
+        add_check(checks, CHECK_ERROR, "Frames per batch must be at least 1")
+    else:
+        add_check(checks, CHECK_OK, "Frames per batch is valid", str(chunk_size))
+
+    if output:
+        output_folder = folder_for_output_path(output)
+        if output_folder and has_c4d_tokens(output_folder):
+            add_check(checks, CHECK_OK, "Output path uses Cinema 4D tokens", "Cinema 4D will resolve these at render time:\n%s" % output)
+        elif output_folder and os.path.isdir(output_folder):
+            add_check(checks, CHECK_OK, "Output folder exists", output_folder)
+        elif output_folder:
+            add_check(checks, CHECK_WARNING, "Output folder does not exist yet", output_folder)
+        else:
+            add_check(checks, CHECK_WARNING, "Output path has no folder", output)
+    else:
+        add_check(checks, CHECK_ERROR, "Output path is empty", "Set an output path in Cinema 4D Render Settings.")
+
+    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
+    if submit_marked_takes:
+        if not marked_takes:
+            add_check(checks, CHECK_ERROR, "No marked takes were found", "Mark takes in the Take Manager or disable marked-take submission.")
+        else:
+            labels = [take_name(take) for take in marked_takes]
+            duplicates = sorted(set(label for label in labels if labels.count(label) > 1))
+            if duplicates:
+                add_check(checks, CHECK_ERROR, "Marked takes must have unique names", "\n".join(duplicates))
+            else:
+                add_check(checks, CHECK_OK, "Marked takes are valid", "%d takes" % len(marked_takes))
+
+    assets, asset_error = collect_scene_assets(doc)
+    if asset_error:
+        add_check(checks, CHECK_WARNING, "Could not run Cinema 4D asset check", str(asset_error))
+    else:
+        missing = []
+        external = []
+        for asset in assets:
+            path = asset_text(asset, ("filename", "assetname", "name", "url", "nodePath"))
+            if not path:
+                continue
+            normalized = normalize_asset_path(path, project)
+            if not asset_exists(asset, path, project):
+                missing.append(path)
+            elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
+                external.append(normalized)
+        if missing:
+            add_check(checks, CHECK_ERROR, "Missing assets were found", "\n".join(missing[:12]))
+        else:
+            add_check(checks, CHECK_OK, "No missing assets reported", "%d assets checked" % len(assets))
+        if external:
+            add_check(
+                checks,
+                CHECK_WARNING,
+                "Assets outside the project folder",
+                "Workers need the same path mapping for these files:\n%s" % "\n".join(external[:12]),
+            )
+
+    return checks
+
+
 def create_job(share, scene, output, frames, name, chunk_size, notes, metadata=None):
     job_id = "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), uuid.uuid4().hex[:8])
     job_dir = os.path.join(share, "jobs", job_id)
@@ -294,6 +574,7 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
         self.GroupEnd()
         self.AddSeparatorH(c4d.BFH_SCALEFIT)
+        self.AddButton(IDC_CHECK_SCENE, c4d.BFH_LEFT, name="Check Scene")
         self.AddButton(IDC_OPEN_DASHBOARD, c4d.BFH_LEFT, name="Open Dashboard")
         self.AddButton(IDC_SUBMIT, c4d.BFH_RIGHT, name="Submit")
         return True
@@ -324,31 +605,40 @@ class DreamRenderDialog(gui.GeDialog):
         if control_id == IDC_OPEN_DASHBOARD:
             webbrowser.open("http://127.0.0.1:8766")
             return True
+        if control_id == IDC_CHECK_SCENE:
+            self.run_scene_check(show_dialog=True)
+            return True
         return True
 
-    def submit(self):
+    def collect_submit_values(self):
         share = self.GetString(IDC_SHARE).strip()
         name = self.GetString(IDC_NAME).strip() or os.path.splitext(get_document_name(self.doc))[0]
         output = self.GetString(IDC_OUTPUT).strip()
-        output_source = get_output_path_info(self.doc)[1]
-        frame_source = self.frame_source
         start = self.GetInt32(IDC_START)
         end = self.GetInt32(IDC_END)
-        chunk_size = max(1, self.GetInt32(IDC_CHUNK_SIZE))
+        chunk_size = self.GetInt32(IDC_CHUNK_SIZE)
         submit_marked_takes = self.GetBool(IDC_MARKED_TAKES)
         notes = self.GetString(IDC_NOTES).strip()
-        if not share:
-            gui.MessageDialog("Choose a DreamRender share folder.")
+        return share, name, output, start, end, chunk_size, submit_marked_takes, notes
+
+    def run_scene_check(self, show_dialog=True):
+        share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
+        checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        if show_dialog:
+            gui.MessageDialog(format_checks(checks))
+        return checks
+
+    def submit(self):
+        share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
+        output_source = get_output_path_info(self.doc)[1]
+        frame_source = self.frame_source
+        chunk_size = max(1, self.GetInt32(IDC_CHUNK_SIZE))
+        checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        if has_check_level(checks, CHECK_ERROR):
+            gui.MessageDialog(format_checks(checks, "DreamRender cannot submit this scene yet"))
             return
-        if end < start:
-            gui.MessageDialog("End frame must be greater than or equal to start frame.")
-            return
-        if not os.path.isdir(share):
-            gui.MessageDialog("DreamRender share folder does not exist or is not accessible:\n%s" % share)
-            return
-        output_folder = output if not os.path.splitext(output)[1] else os.path.dirname(output)
-        if output_folder and not has_c4d_tokens(output_folder) and not os.path.isdir(output_folder):
-            if not gui.QuestionDialog("Output folder does not exist yet:\n%s\n\nSubmit anyway?" % output_folder):
+        if has_check_level(checks, CHECK_WARNING):
+            if not gui.QuestionDialog("%s\n\nSubmit anyway?" % format_checks(checks, "DreamRender found warnings")):
                 return
 
         if not save_current_document(self.doc):
