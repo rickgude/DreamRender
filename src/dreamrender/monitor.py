@@ -161,12 +161,13 @@ HTML = r"""<!doctype html>
     .frame.failed { background: rgba(236, 108, 121, .20); border-color: rgba(236, 108, 121, .65); color: #96323d; }
     .frame.queued { background: #e8ede9; }
     .frame.worker-owned {
-      background: color-mix(in srgb, var(--worker-color) 24%, white);
-      border-color: color-mix(in srgb, var(--worker-color) 72%, #d5ddd8);
+      background: var(--worker-color);
+      border-color: transparent;
       color: var(--ink);
     }
     .frame.rendering.worker-owned {
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--worker-color) 70%, white);
+      border-color: transparent;
+      box-shadow: none;
     }
     .empty { padding: 48px; text-align: center; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 24px; background: var(--panel); }
     dialog {
