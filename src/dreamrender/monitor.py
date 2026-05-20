@@ -89,23 +89,23 @@ HTML = r"""<!doctype html>
     .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .jobs { display: grid; gap: 18px; }
     .job-group {
-      background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
+      background: #eef5f2; border: 1px solid #d8e4df; border-radius: 26px;
       padding: 24px; box-shadow: var(--soft-shadow);
     }
     .group-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin: 0 0 18px; }
     .group-title { font-size: 25px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
     .group-jobs { display: grid; gap: 14px; }
     .job {
-      background: #fbfcfa; border: 1px solid var(--line); border-radius: 24px; overflow: hidden;
-      box-shadow: none;
+      background: #ffffff; border: 1px solid #dbe5e1; border-radius: 24px; overflow: hidden;
+      box-shadow: 0 8px 22px rgba(18, 22, 22, .045);
     }
-    .job-group .job { background: #fbfcfa; box-shadow: none; }
+    .job-group .job { background: #ffffff; }
     .job-head { display: grid; grid-template-columns: 1fr auto; gap: 22px; padding: 24px 26px 22px; cursor: pointer; }
     .job-body { display: block; }
     .job.collapsed .job-body { display: none; }
     .job.collapsed .job-detail-lines { display: none; }
     .job.collapsed .job-head { padding-bottom: 24px; }
-    .job.collapsed { background: #fbfcfa; }
+    .job.collapsed { background: #ffffff; }
     .job-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
     .job-title { font-size: 23px; font-weight: 900; margin-bottom: 5px; letter-spacing: 0; }
     .job-title-row .job-title { margin-bottom: 0; }
