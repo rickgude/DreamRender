@@ -609,8 +609,14 @@ def calculate_job_stats(job: dict[str, Any], frames: list[dict[str, Any]]) -> di
     queued = sum(1 for frame in frames if frame.get("status") in {"queued", "failed"})
     avg_seconds = (sum(durations) / len(durations)) if durations else None
     eta_seconds = avg_seconds * queued if avg_seconds is not None else None
-    started = parse_utc(job.get("created_at"))
-    elapsed = time.time() - started if started is not None else None
+    started_values = [parse_utc(frame.get("started_at")) for frame in frames]
+    started_values = [value for value in started_values if value is not None]
+    first_started = min(started_values) if started_values else None
+    finished_values = [parse_utc(frame.get("finished_at")) for frame in frames]
+    finished_values = [value for value in finished_values if value is not None]
+    all_terminal = frames and all(frame.get("status") in {"done", "failed", "cancelled"} for frame in frames)
+    elapsed_end = max(finished_values) if all_terminal and finished_values else time.time()
+    elapsed = elapsed_end - first_started if first_started is not None else None
 
     return {
         "avg_seconds": avg_seconds,
