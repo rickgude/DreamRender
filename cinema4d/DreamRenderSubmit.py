@@ -37,6 +37,8 @@ IDC_CHECK_STATUS = 1016
 IDC_CHECK_PROGRESS = 1019
 IDC_CHECK_TABLE = 1020
 IDC_IGNORE_WARNINGS = 1021
+IDC_CONFIRM_SAVE = 1030
+IDC_CONFIRM_CANCEL = 1031
 
 CHECK_ERROR = "ERROR"
 CHECK_WARNING = "WARNING"
@@ -121,6 +123,53 @@ def get_document_name(doc):
     if not name.lower().endswith(".c4d"):
         name += ".c4d"
     return name
+
+
+class ConfirmSaveDialog(gui.GeDialog):
+    def __init__(self, scene_path):
+        super(ConfirmSaveDialog, self).__init__()
+        self.scene_path = scene_path
+        self.accepted = False
+
+    def CreateLayout(self):
+        self.SetTitle("DreamRender")
+        self.GroupBegin(2000, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
+        self.GroupBorderSpace(14, 14, 14, 14)
+        self.GroupSpace(0, 10)
+        self.AddStaticText(0, c4d.BFH_SCALEFIT, name="DreamRender needs to save the current Cinema 4D scene before submitting.")
+        self.AddStaticText(0, c4d.BFH_SCALEFIT, name=self.scene_path)
+        self.GroupBegin(2001, c4d.BFH_RIGHT, 2, 1)
+        self.GroupSpace(8, 0)
+        self.AddButton(IDC_CONFIRM_CANCEL, c4d.BFH_LEFT, initw=92, name="Cancel")
+        self.AddButton(IDC_CONFIRM_SAVE, c4d.BFH_LEFT, initw=92, name="Save")
+        self.GroupEnd()
+        self.GroupEnd()
+        return True
+
+    def Command(self, control_id, msg):
+        if control_id == IDC_CONFIRM_SAVE:
+            self.accepted = True
+            self.Close()
+            return True
+        if control_id == IDC_CONFIRM_CANCEL:
+            self.accepted = False
+            self.Close()
+            return True
+        return True
+
+
+def confirm_save_before_submit(doc):
+    folder = doc.GetDocumentPath()
+    if not folder:
+        gui.MessageDialog("Save the Cinema 4D scene once before submitting to DreamRender.")
+        return False
+    source_path = os.path.join(folder, get_document_name(doc))
+    try:
+        dialog = ConfirmSaveDialog(source_path)
+        dialog.Open(c4d.DLG_TYPE_MODAL, defaultw=460, defaulth=145)
+        return bool(dialog.accepted)
+    except Exception:
+        return bool(gui.QuestionDialog("DreamRender needs to save the current Cinema 4D scene before submitting.\n\nSave and submit?"))
 
 
 def save_current_document(doc):
@@ -1471,6 +1520,8 @@ class DreamRenderDialog(gui.GeDialog):
             if not gui.QuestionDialog("%s\n\nSubmit anyway?" % format_checks(checks, "DreamRender found warnings")):
                 return
 
+        if not confirm_save_before_submit(self.doc):
+            return
         if not save_current_document(self.doc):
             return
 
