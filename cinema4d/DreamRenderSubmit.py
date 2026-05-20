@@ -35,8 +35,10 @@ IDC_MARKED_TAKES = 1011
 IDC_OUTPUT_SOURCE = 1012
 IDC_FRAME_SOURCE = 1013
 IDC_CHECK_SCENE = 1014
-IDC_CHECK_REPORT = 1015
 IDC_CHECK_STATUS = 1016
+IDC_CHECK_TABLE_BASE = 1200
+CHECK_TABLE_ROWS = 13
+CHECK_TABLE_COLUMNS = 4
 
 CHECK_ERROR = "ERROR"
 CHECK_WARNING = "WARNING"
@@ -340,7 +342,7 @@ def check_result_text(level, message, info=""):
 
 
 def add_report_row(rows, label, level, message, info=""):
-    rows.append({"label": label, "level": level, "text": check_result_text(level, message, info)})
+    rows.append({"label": label, "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)})
 
 
 def report_has_level(rows, level):
@@ -355,6 +357,14 @@ def report_status_text(rows):
     return "Scene check passed. Ready to submit."
 
 
+def report_state_text(level):
+    if level == CHECK_ERROR:
+        return "Error"
+    if level == CHECK_WARNING:
+        return "Warning"
+    return "Success"
+
+
 def format_scene_report(rows):
     label_width = 15
     lines = []
@@ -363,6 +373,13 @@ def format_scene_report(rows):
     lines.append("")
     lines.append("%s %s" % ("STATUS:".ljust(label_width), report_status_text(rows)))
     return "\n".join(lines)
+
+
+def compact_text(value, limit=92):
+    text = str(value or "").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 def format_checks(checks, title="DreamRender Scene Check"):
@@ -774,15 +791,23 @@ class DreamRenderDialog(gui.GeDialog):
         super(DreamRenderDialog, self).__init__()
         self.doc = c4d.documents.GetActiveDocument()
         self.config = read_config()
+        self.check_rows = []
         start, end, frame_source = get_render_range(self.doc)
         self.start = start
         self.end = end
         self.frame_source = frame_source
 
+    def check_cell_id(self, row_index, column_index):
+        return IDC_CHECK_TABLE_BASE + row_index * CHECK_TABLE_COLUMNS + column_index
+
     def CreateLayout(self):
         self.SetTitle("Submit to DreamRender")
         self.GroupBegin(2000, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 2, 1)
-        self.GroupBegin(2001, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 0)
+        self.GroupBorderSpace(12, 12, 12, 12)
+        self.GroupSpace(18, 10)
+        self.GroupBegin(2001, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 0, title="Submit")
+        self.GroupBorderSpace(10, 10, 10, 10)
+        self.GroupSpace(0, 7)
         self.AddButton(IDC_CHECK_SCENE, c4d.BFH_SCALEFIT, name="Check Scene")
         self.AddButton(IDC_OPEN_DASHBOARD, c4d.BFH_SCALEFIT, name="Open Dashboard")
         self.AddSeparatorH(c4d.BFH_SCALEFIT)
@@ -811,9 +836,23 @@ class DreamRenderDialog(gui.GeDialog):
         self.AddStaticText(0, c4d.BFH_LEFT, name="")
         self.AddButton(IDC_SUBMIT, c4d.BFH_SCALEFIT, name="Submit Project")
         self.GroupEnd()
-        self.GroupBegin(2002, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
-        self.AddStaticText(0, c4d.BFH_LEFT, name="Scene Check")
-        self.AddMultiLineEditText(IDC_CHECK_REPORT, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, initw=620, inith=320)
+        self.GroupBegin(2002, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0, title="Scene Check")
+        self.GroupBorderSpace(12, 10, 12, 10)
+        self.GroupSpace(0, 8)
+        self.AddStaticText(0, c4d.BFH_LEFT, name="Render farm preflight")
+        self.GroupBegin(2003, c4d.BFH_SCALEFIT | c4d.BFV_TOP, CHECK_TABLE_COLUMNS, 0)
+        self.GroupBorderSpace(0, 8, 0, 8)
+        self.GroupSpace(14, 6)
+        self.AddStaticText(0, c4d.BFH_LEFT, initw=120, name="Check")
+        self.AddStaticText(0, c4d.BFH_LEFT, initw=80, name="State")
+        self.AddStaticText(0, c4d.BFH_LEFT, initw=190, name="Result")
+        self.AddStaticText(0, c4d.BFH_SCALEFIT, initw=360, name="Info")
+        for row_index in range(CHECK_TABLE_ROWS):
+            self.AddStaticText(self.check_cell_id(row_index, 0), c4d.BFH_LEFT, initw=120, name="")
+            self.AddStaticText(self.check_cell_id(row_index, 1), c4d.BFH_LEFT, initw=80, name="")
+            self.AddStaticText(self.check_cell_id(row_index, 2), c4d.BFH_LEFT, initw=190, name="")
+            self.AddStaticText(self.check_cell_id(row_index, 3), c4d.BFH_SCALEFIT, initw=360, name="")
+        self.GroupEnd()
         self.AddStaticText(IDC_CHECK_STATUS, c4d.BFH_SCALEFIT, name="Run Check Scene before submitting.")
         self.GroupEnd()
         return True
@@ -861,12 +900,28 @@ class DreamRenderDialog(gui.GeDialog):
         notes = self.GetString(IDC_NOTES).strip()
         return share, name, output, start, end, chunk_size, submit_marked_takes, notes
 
+    def update_check_table(self, rows):
+        self.check_rows = rows
+        for row_index in range(CHECK_TABLE_ROWS):
+            if row_index < len(rows):
+                row = rows[row_index]
+                values = (
+                    row["label"],
+                    report_state_text(row["level"]),
+                    compact_text(row.get("message")),
+                    compact_text(row.get("info")),
+                )
+            else:
+                values = ("", "", "", "")
+            for column_index, value in enumerate(values):
+                self.SetString(self.check_cell_id(row_index, column_index), value)
+
     def run_scene_check(self, show_dialog=True):
         share, name, output, start, end, chunk_size, submit_marked_takes, notes = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         report = format_scene_report(rows)
-        self.SetString(IDC_CHECK_REPORT, report)
+        self.update_check_table(rows)
         self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
         if show_dialog:
             gui.MessageDialog(report)

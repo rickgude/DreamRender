@@ -169,9 +169,10 @@ range. The submitter respects Manual, Current Frame, All Frames, and Preview
 Range modes, then shows the detected source beside the frame field.
 
 Use `Check Scene` before submitting when you want a render-farm-style preflight.
-The submitter shows a report with Camera, Project, Textures, Render Engine,
-FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes.
-Errors block submit; warnings ask for confirmation.
+The submitter shows a table with Camera, Project, Textures, Render Engine,
+FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes,
+with separate columns for state, result, and info. Errors block submit; warnings
+ask for confirmation.
 
 Frames per batch controls how many contiguous frames a worker claims and renders
 per Cinema 4D commandline launch for that job. Higher values reduce scene reload
