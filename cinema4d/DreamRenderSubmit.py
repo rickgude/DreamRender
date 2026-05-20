@@ -1,6 +1,6 @@
-"""DreamRender Cinema 4D submit script.
+"""DreamRender Cinema 4D submit dialog.
 
-Drop this file into your Cinema 4D scripts folder and run it from Script Manager.
+The Cinema 4D plugin wrapper loads this module from the user's plugins folder.
 It saves a render copy of the current document into a DreamRenderJobs folder near
 the project, then creates a job in the shared DreamRender queue.
 """

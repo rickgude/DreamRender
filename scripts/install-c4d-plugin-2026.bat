@@ -4,8 +4,10 @@ set "ROOT=%~dp0.."
 set "SOURCE_SCRIPT=%ROOT%\cinema4d\DreamRenderSubmit.py"
 set "SOURCE_PLUGIN=%ROOT%\cinema4d\plugin\DreamRender.pyp"
 set "TARGET="
+set "PREFS="
 
 for /d %%D in ("%APPDATA%\Maxon\Maxon Cinema 4D 2026_*") do (
+  set "PREFS=%%~fD"
   set "TARGET=%%~fD\plugins\DreamRender"
   goto :found_target
 )
@@ -38,6 +40,10 @@ copy /Y "%SOURCE_PLUGIN%" "%TARGET%\DreamRender.pyp" >nul
 if errorlevel 1 (
   echo Could not install DreamRender plugin.
   exit /b 1
+)
+
+if exist "%PREFS%\library\scripts\DreamRenderSubmit.py" (
+  del /Q "%PREFS%\library\scripts\DreamRenderSubmit.py" >nul 2>nul
 )
 
 echo Installed DreamRender C4D plugin to:

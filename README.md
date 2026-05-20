@@ -137,16 +137,23 @@ themselves. To get dashboard thumbnails for EXR/TIFF frames, install one of
 these on the machine running the monitor and make sure it is on `PATH`:
 ImageMagick (`magick`), OpenImageIO (`oiiotool`), or ffmpeg.
 
-## Cinema 4D submitter
+## Cinema 4D plugin
 
-The Cinema 4D submitter lives here:
+The Cinema 4D submitter is installed as a menu command plugin. Install it with:
+
+```bat
+C:\DreamRender\scripts\install-c4d-plugin-2026.bat
+```
+
+Restart Cinema 4D and look for `DreamRender Submit Render` in the Extensions
+menu or Command Manager. The plugin loads the submit dialog from:
 
 ```text
+cinema4d/plugin/DreamRender.pyp
 cinema4d/DreamRenderSubmit.py
 ```
 
-Drop that file into Cinema 4D's scripts folder and run it from Script Manager.
-It opens a small submit dialog with:
+It opens a submit dialog with:
 
 - DreamRender share path
 - job name
@@ -178,26 +185,8 @@ Cinema 4D tokens such as `$prj` and `$take` are passed through to Cinema 4D, and
 DreamRender expands the common tokens only when searching for dashboard previews.
 Marked takes must have unique names.
 
-For Cinema 4D 2026 on this machine, you can install it with:
-
-```bat
-C:\DreamRender\scripts\install-c4d-submitter-2026.bat
-```
-
-Then restart Cinema 4D and open the Script Manager. The script is named:
-
-```text
-DreamRenderSubmit.py
-```
-
-To install the menu command plugin instead:
-
-```bat
-C:\DreamRender\scripts\install-c4d-plugin-2026.bat
-```
-
-Restart Cinema 4D and look for `DreamRender Submit Render` in the Extensions
-menu or Command Manager.
+The legacy `install-c4d-submitter-2026.bat` command now forwards to the plugin
+installer too, so existing shortcuts still install the plugin.
 
 When you submit, it saves a copy of the current document into a folder beside
 the project:
