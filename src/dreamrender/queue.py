@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 import os
 import shutil
 import socket
@@ -60,25 +61,43 @@ def format_seconds(seconds: float | None) -> str:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8-sig") as handle:
-        return json.load(handle)
+    last_error: Exception | None = None
+    for attempt in range(5):
+        try:
+            with path.open("r", encoding="utf-8-sig") as handle:
+                return json.load(handle)
+        except (OSError, JSONDecodeError) as exc:
+            last_error = exc
+            if attempt == 4:
+                break
+            time.sleep(0.05 * (attempt + 1))
+    raise last_error or FileNotFoundError(path)
 
 
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with tmp.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.replace(tmp, path)
-    except PermissionError as exc:
-        raise ShareAccessError(f"Cannot write to DreamRender share path: {path.parent}") from exc
-    finally:
+    last_error: OSError | None = None
+    for attempt in range(8):
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            tmp.unlink()
-        except FileNotFoundError:
-            pass
+            with tmp.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp, path)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt == 7:
+                break
+            time.sleep(0.08 * (attempt + 1))
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+    raise ShareAccessError(f"Cannot write to DreamRender share path: {path.parent}") from last_error
 
 
 def terminate_process_tree(process: subprocess.Popen[str]) -> None:
@@ -364,6 +383,8 @@ def read_job_status(job_dir: Path) -> str:
         return str(read_json(job_dir / "job.json").get("status", "queued"))
     except FileNotFoundError:
         return "cancelled"
+    except Exception:
+        return "queued"
 
 
 def heartbeat_frames(frame_paths: list[Path], worker_id: str) -> None:
@@ -480,8 +501,17 @@ def render_frames(
                 pass
             now = time.time()
             if now - last_heartbeat >= heartbeat_interval:
-                heartbeat_worker(share, worker_id, {"job_id": job["id"], "start_frame": start_frame, "end_frame": end_frame})
-                heartbeat_frames(frame_paths, worker_id)
+                active = {"job_id": job["id"], "start_frame": start_frame, "end_frame": end_frame}
+                try:
+                    heartbeat_worker(share, worker_id, active)
+                except ShareAccessError as exc:
+                    log.write(f"[{utc_now()}] Could not write worker heartbeat: {exc}\n")
+                    log.flush()
+                try:
+                    heartbeat_frames(frame_paths, worker_id)
+                except ShareAccessError as exc:
+                    log.write(f"[{utc_now()}] Could not write frame heartbeat: {exc}\n")
+                    log.flush()
                 last_heartbeat = now
                 if read_job_status(job_dir) == "cancelled":
                     cancelled = True
@@ -838,14 +868,52 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
     if not share.workers_dir.exists():
         return workers
     job_statuses = {}
+    active_rendering_ranges: dict[tuple[str, str], dict[str, Any]] = {}
     for job_dir in list_jobs(share):
         try:
             job = read_json(job_dir / "job.json")
         except FileNotFoundError:
             continue
-        job_statuses[job_dir.name] = job.get("status", "unknown")
+        except Exception:
+            continue
+        job_id = str(job.get("id") or job_dir.name)
+        job_statuses[job_id] = job.get("status", "unknown")
+        for frame_path in (job_dir / "frames").glob("*.json"):
+            try:
+                frame = read_json(frame_path)
+            except Exception:
+                continue
+            if frame.get("status") != "rendering" or not frame.get("worker_id"):
+                continue
+            frame_worker_id = str(frame["worker_id"])
+            frame_number = int(frame.get("frame", frame_path.stem))
+            frame_heartbeat = parse_utc(frame.get("heartbeat_at") or frame.get("updated_at")) or 0
+            key = (frame_worker_id, job_id)
+            current = active_rendering_ranges.get(key)
+            if current is None:
+                active_rendering_ranges[key] = {
+                    "job_id": job_id,
+                    "start_frame": frame_number,
+                    "end_frame": frame_number,
+                    "heartbeat_ts": frame_heartbeat,
+                }
+            else:
+                current["start_frame"] = min(current["start_frame"], frame_number)
+                current["end_frame"] = max(current["end_frame"], frame_number)
+                current["heartbeat_ts"] = max(current["heartbeat_ts"], frame_heartbeat)
+    active_rendering: dict[str, dict[str, Any]] = {}
+    for (worker_id, _job_id), active in active_rendering_ranges.items():
+        current = active_rendering.get(worker_id)
+        if current is None or active["heartbeat_ts"] >= current.get("heartbeat_ts", 0):
+            active_rendering[worker_id] = active
+    seen_workers = set()
     for worker_path in sorted(share.workers_dir.glob("*.json")):
-        worker = read_json(worker_path)
+        try:
+            worker = read_json(worker_path)
+        except Exception:
+            continue
+        worker_id = str(worker.get("worker_id") or worker_path.stem)
+        seen_workers.add(worker_id)
         heartbeat = parse_utc(worker.get("heartbeat_at"))
         age = None if heartbeat is None else max(0, time.time() - heartbeat)
         worker["state"] = "offline"
@@ -854,12 +922,41 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
             worker["state"] = "online"
         active = worker.get("active")
         active_job_id = active.get("job_id") if isinstance(active, dict) else None
+        rendering_active = active_rendering.get(worker_id)
+        if worker["state"] != "online" and rendering_active:
+            worker["state"] = "heartbeat_lost"
+            worker["active"] = {
+                "job_id": rendering_active["job_id"],
+                "start_frame": rendering_active["start_frame"],
+                "end_frame": rendering_active["end_frame"],
+            }
+            active = worker["active"]
+            active_job_id = rendering_active["job_id"]
         active_job_status = job_statuses.get(active_job_id)
         worker["active_job_status"] = active_job_status
-        worker["stale_active"] = bool(worker.get("active") and worker["state"] != "online")
-        if worker["state"] != "online":
+        worker["stale_active"] = bool(worker.get("active") and worker["state"] == "offline")
+        if worker["state"] == "offline":
             worker["active"] = None
         workers.append(worker)
+    for worker_id, rendering_active in sorted(active_rendering.items()):
+        if worker_id in seen_workers:
+            continue
+        workers.append(
+            {
+                "worker_id": worker_id,
+                "host": worker_id,
+                "heartbeat_at": None,
+                "state": "heartbeat_lost",
+                "last_seen_seconds": None,
+                "active": {
+                    "job_id": rendering_active["job_id"],
+                    "start_frame": rendering_active["start_frame"],
+                    "end_frame": rendering_active["end_frame"],
+                },
+                "active_job_status": job_statuses.get(rendering_active["job_id"]),
+                "stale_active": False,
+            }
+        )
     return workers
 
 

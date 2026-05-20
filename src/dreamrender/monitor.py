@@ -87,6 +87,7 @@ HTML = r"""<!doctype html>
     .worker .subtle, .worker-card .subtle { color: rgba(14,14,13,.72); font-weight: 650; }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
     .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
+    .dot.heartbeat-lost { background: var(--rendering); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .jobs { display: grid; gap: 18px; }
     .job-group {
       background: #eef5f2; border: 1px solid #d8e4df; border-radius: 26px;
@@ -354,9 +355,11 @@ HTML = r"""<!doctype html>
     function workerLabel(worker) {
       if (worker.active) {
         const suffix = ["archived", "draining"].includes(worker.active_job_status) ? " (finishing current batch)" : "";
+        if (worker.state === "heartbeat_lost") return `heartbeat lost, ${activeLabel(worker.active)}`;
         return `${activeLabel(worker.active)}${suffix}`;
       }
       if (worker.state === "online") return "idle";
+      if (worker.state === "heartbeat_lost") return "heartbeat lost while rendering";
       if (worker.last_seen_seconds == null) return "offline";
       return `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
     }
@@ -581,7 +584,7 @@ HTML = r"""<!doctype html>
       document.getElementById("updated").textContent = new Date(data.generated_at).toLocaleString();
       document.getElementById("workers").innerHTML = data.workers.length ? data.workers.map(w => `
         <div class="worker" style="--worker-color:${workerColor(w.worker_id)}">
-          <span class="dot ${w.state === "online" ? "online" : ""}" style="--worker-color:${workerColor(w.worker_id)}"></span>
+          <span class="dot ${w.state === "online" ? "online" : ""} ${w.state === "heartbeat_lost" ? "heartbeat-lost" : ""}" style="--worker-color:${workerColor(w.worker_id)}"></span>
           <div>
             <div>${esc(w.worker_id)}</div>
             <div class="subtle">${esc(workerLabel(w))}</div>
