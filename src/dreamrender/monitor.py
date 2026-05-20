@@ -78,11 +78,12 @@ HTML = r"""<!doctype html>
     .legend-swatch.queued { background: #e8ede9; border-color: #d9e0dc; }
     .worker {
       display: flex; gap: 12px; align-items: center; padding: 14px 12px; margin-bottom: 10px;
-      border: 1px solid var(--line); background: var(--panel); border-radius: 20px; box-shadow: var(--soft-shadow);
+      border: 0; background: var(--worker-color, var(--panel)); border-radius: 20px; box-shadow: var(--soft-shadow);
+      color: var(--ink);
     }
     .worker > div:first-of-type { font-weight: 800; }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
-    .dot.online { background: var(--worker-color, var(--good)); }
+    .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .jobs { display: grid; gap: 18px; }
     .job-group {
       background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
@@ -116,6 +117,12 @@ HTML = r"""<!doctype html>
     .job-status.rendering { background: var(--rendering); border-color: var(--rendering); color: white; }
     .job-status.failed { background: var(--bad); border-color: var(--bad); color: white; }
     .job-status.queued { background: #e8ede9; border-color: #d9e0dc; color: #555e5d; }
+    .drag-handle {
+      width: 28px; height: 28px; display: inline-grid; place-items: center;
+      border: 0; border-radius: 999px; background: #eef3ef; color: #69716f;
+      cursor: grab; font-weight: 900; line-height: 1;
+    }
+    .drag-handle:active { cursor: grabbing; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     .actions { display: flex; align-items: start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     button {
@@ -126,7 +133,7 @@ HTML = r"""<!doctype html>
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
     .progress { height: 10px; background: #e9eee9; border-top: 1px solid var(--line); overflow: hidden; }
-    .bar { height: 100%; background: linear-gradient(90deg, var(--accent), #ff7b4e); width: 0%; transition: width .25s ease; border-radius: 0 999px 999px 0; }
+    .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 0 999px 999px 0; }
     .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 13px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
     .stats span {
       background: #eef3ef; color: #555e5d; border: 1px solid var(--line);
@@ -138,9 +145,8 @@ HTML = r"""<!doctype html>
     .metric-value { font-size: 24px; font-weight: 900; margin-top: 4px; color: var(--ink); letter-spacing: 0; }
     .worker-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; padding: 0 20px 16px; }
     .worker-card {
-      background: color-mix(in srgb, var(--worker-color) 18%, white);
-      border: 1px solid color-mix(in srgb, var(--worker-color) 58%, #dfe4e1);
-      border-radius: 18px; padding: 11px 12px;
+      background: var(--worker-color);
+      border: 0; border-radius: 18px; padding: 11px 12px; color: var(--ink);
     }
     .worker-card strong { display: block; margin-bottom: 4px; }
     .frames-label {
@@ -268,6 +274,12 @@ HTML = r"""<!doctype html>
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     }[char]));
     const workerPalette = ["#ffd43d", "#58c981", "#8b63f6", "#ff5538", "#ffb13d", "#41d8a1", "#a16cff", "#ff7a59"];
+    const statusColors = {
+      done: "#58c981",
+      rendering: "#ff8b3d",
+      failed: "#ec6c79",
+      queued: "#dfe7e2"
+    };
     const statusText = counts => Object.entries(counts || {}).sort().map(([k,v]) => `${k}: ${v}`).join("  ");
     function hashWorker(value) {
       let hash = 0;
@@ -351,6 +363,9 @@ HTML = r"""<!doctype html>
       if (job.status === "paused") return ["queued", "Paused"];
       if (job.status === "draining") return ["rendering", "Draining"];
       return ["queued", "Queued"];
+    }
+    function statusColor(statusClass) {
+      return statusColors[statusClass] || statusColors.queued;
     }
     function jobActions(job) {
       const counts = job.counts || {};
@@ -440,10 +455,11 @@ HTML = r"""<!doctype html>
     function renderJob(j) {
       const collapsed = collapsedJobs.has(j.id);
       const [statusClass, statusLabel] = jobState(j);
-      return `<article class="job ${collapsed ? "collapsed" : ""}" draggable="true" data-job-id="${esc(j.id)}" data-priority="${esc(j.priority ?? 5000)}">
+      return `<article class="job ${collapsed ? "collapsed" : ""}" style="--job-color:${statusColor(statusClass)}" data-job-id="${esc(j.id)}" data-priority="${esc(j.priority ?? 5000)}">
         <div class="job-head" onclick="toggleJob('${j.id}')">
           <div>
             <div class="job-title-row">
+              <span class="drag-handle" draggable="true" title="Drag to change priority" onclick="event.stopPropagation()">::</span>
               <div class="job-title">${esc(j.name)}</div>
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
             </div>
@@ -529,13 +545,15 @@ HTML = r"""<!doctype html>
     }
     function setupJobDrag() {
       document.querySelectorAll(".job").forEach(jobEl => {
-        jobEl.addEventListener("dragstart", event => {
+        const handle = jobEl.querySelector(".drag-handle");
+        if (!handle) return;
+        handle.addEventListener("dragstart", event => {
           draggedJobId = jobEl.dataset.jobId;
           jobEl.classList.add("dragging");
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", draggedJobId);
         });
-        jobEl.addEventListener("dragend", () => {
+        handle.addEventListener("dragend", () => {
           jobEl.classList.remove("dragging");
           document.querySelectorAll(".job.drop-target").forEach(el => el.classList.remove("drop-target"));
           draggedJobId = null;
@@ -564,7 +582,7 @@ HTML = r"""<!doctype html>
       document.getElementById("share").textContent = data.share;
       document.getElementById("updated").textContent = new Date(data.generated_at).toLocaleString();
       document.getElementById("workers").innerHTML = data.workers.length ? data.workers.map(w => `
-        <div class="worker">
+        <div class="worker" style="--worker-color:${workerColor(w.worker_id)}">
           <span class="dot ${w.state === "online" ? "online" : ""}" style="--worker-color:${workerColor(w.worker_id)}"></span>
           <div>
             <div>${esc(w.worker_id)}</div>
