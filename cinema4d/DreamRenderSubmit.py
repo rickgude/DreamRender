@@ -920,7 +920,7 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
                 elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
                     external.append(normalized)
             if missing:
-                level, message, info = CHECK_ERROR, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0])
+                level, message, info = CHECK_WARNING, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0])
             elif external:
                 level, message, info = CHECK_WARNING, "external asset paths found", "%d outside project; workers need same mapping" % len(external)
             else:
@@ -1231,7 +1231,7 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
             elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
                 external.append(normalized)
         if missing:
-            add_check(checks, CHECK_ERROR, "Missing assets were found", "\n".join(missing[:12]))
+            add_check(checks, CHECK_WARNING, "Missing assets were found", "\n".join(missing[:12]))
         else:
             add_check(checks, CHECK_OK, "No missing assets reported", "%d assets checked" % len(assets))
         if external:
