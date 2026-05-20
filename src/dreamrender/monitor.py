@@ -102,7 +102,18 @@ HTML = r"""<!doctype html>
     .job.collapsed .job-detail-lines { display: none; }
     .job.collapsed .job-head { padding-bottom: 18px; }
     .job.collapsed { background: #fbfcfa; }
+    .job-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 5px; }
     .job-title { font-size: 18px; font-weight: 850; margin-bottom: 5px; letter-spacing: 0; }
+    .job-title-row .job-title { margin-bottom: 0; }
+    .job-status {
+      display: inline-flex; align-items: center; min-height: 28px; padding: 4px 11px;
+      border: 1px solid var(--line); border-radius: 999px; background: #e8ede9;
+      color: #555e5d; font-size: 12px; font-weight: 850;
+    }
+    .job-status.done { background: var(--good); border-color: var(--good); color: white; }
+    .job-status.rendering { background: var(--rendering); border-color: var(--rendering); color: white; }
+    .job-status.failed { background: var(--bad); border-color: var(--bad); color: white; }
+    .job-status.queued { background: #e8ede9; border-color: #d9e0dc; color: #555e5d; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     .actions { display: flex; align-items: start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     button {
@@ -119,17 +130,6 @@ HTML = r"""<!doctype html>
       background: #eef3ef; color: #555e5d; border: 1px solid var(--line);
       border-radius: 999px; padding: 5px 10px; font-weight: 700;
     }
-    .status-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 14px; }
-    .status-chip {
-      display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
-      padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
-      background: #fbfcfa; color: #555e5d; font-size: 12px; font-weight: 800;
-    }
-    .status-chip::before { content: ""; width: 16px; height: 16px; border-radius: 999px; background: #e8ede9; }
-    .status-chip.done::before { background: var(--good); }
-    .status-chip.rendering::before { background: var(--rendering); }
-    .status-chip.failed::before { background: var(--bad); }
-    .status-chip.queued::before { background: #dfe7e2; }
     .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; padding: 0 20px 16px; }
     .metric { background: #f7faf8; border: 1px solid var(--line); border-radius: 18px; padding: 11px 12px; min-height: 66px; }
     .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
@@ -330,17 +330,14 @@ HTML = r"""<!doctype html>
       if (!entry) return "--";
       return `${entry.frame} (${formatSeconds(entry.seconds)})`;
     }
-    function statusChips(counts) {
-      const values = counts || {};
-      const items = [
-        ["done", "Done"],
-        ["rendering", "Rendering"],
-        ["failed", "Error"],
-        ["queued", "Queued"]
-      ];
-      return `<div class="status-chips">${items.map(([key, label]) => `
-        <span class="status-chip ${key}">${label}: ${esc(values[key] || 0)}</span>
-      `).join("")}</div>`;
+    function jobState(job) {
+      const counts = job.counts || {};
+      if ((counts.failed || 0) > 0 || job.status === "cancelled") return ["failed", "Error"];
+      if (job.status === "done" || job.status === "archived") return ["done", "Done"];
+      if ((counts.rendering || 0) > 0) return ["rendering", "Rendering"];
+      if (job.status === "paused") return ["queued", "Paused"];
+      if (job.status === "draining") return ["rendering", "Draining"];
+      return ["queued", "Queued"];
     }
     function formatSeconds(seconds) {
       if (seconds == null) return "--";
@@ -414,10 +411,14 @@ HTML = r"""<!doctype html>
     }
     function renderJob(j) {
       const collapsed = collapsedJobs.has(j.id);
+      const [statusClass, statusLabel] = jobState(j);
       return `<article class="job ${collapsed ? "collapsed" : ""}">
         <div class="job-head">
           <div>
-            <div class="job-title" onclick="openDetail('${j.id}')" style="cursor:pointer">${esc(j.name)}</div>
+            <div class="job-title-row">
+              <div class="job-title" onclick="openDetail('${j.id}')" style="cursor:pointer">${esc(j.name)}</div>
+              <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
+            </div>
             <div class="meta">${j.progress.toFixed(1)}% &middot; ${esc(jobStatusLabel(j))} &middot; ${esc(statusText(j.counts))}</div>
             <div class="job-detail-lines">
               <div class="meta">${esc(j.id)}</div>
@@ -438,7 +439,6 @@ HTML = r"""<!doctype html>
         <div class="job-body">
           <div class="progress"><div class="bar" style="width:${j.progress}%"></div></div>
           <div class="stats"><span>${j.progress.toFixed(1)}%</span><span>${esc(jobStatusLabel(j))}</span><span>batch: ${esc((j.metadata || {}).chunk_size || "--")}</span></div>
-          ${statusChips(j.counts)}
           ${metrics(j)}
           ${workerMetrics(j)}
           <div class="frames-label">Frames</div>
