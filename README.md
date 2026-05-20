@@ -1,263 +1,156 @@
 # DreamRender
 
-DreamRender is a small render queue for a home Cinema 4D + Redshift setup.
-It is intentionally folder-based: workers on any machine can join by pointing at
-the same shared directory.
+DreamRender is a lightweight render queue for small Cinema 4D 2026 + Redshift
+setups. It is built for artists who have a few powerful machines at home or in a
+small studio and want any available machine to pick up frames automatically.
 
-## What works in this MVP
+The queue is folder-based. Every machine points to the same DreamRender share,
+and workers join or leave without a database server.
 
-- Create a shared queue folder.
-- Submit a `.c4d` scene as a frame-based job while preserving scene/output paths.
-- Run one or more workers on different machines.
-- Workers heartbeat, claim frames atomically, render them, and mark them done or failed.
-- Stale frames can be reclaimed when a worker disappears.
-- Job status can be inspected from the command line.
+## Start Here
 
-## Install for development
+New install? Follow the artist-friendly guide:
 
-```powershell
-cd C:\DreamRender
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-```
+**[Install DreamRender](INSTALL.md)**
 
-## Quick start
+That guide covers:
 
-For day-to-day use, launch the desktop control panel:
+- installing regular Python
+- starting the DreamRender app
+- choosing the shared queue folder
+- installing the Cinema 4D plugin
+- starting workers on render machines
+- submitting from Cinema 4D
+- fixing the most common setup problems
 
-```bat
-C:\DreamRender\scripts\start-dreamrender-app.bat
-```
+## What You Get
 
-From there you can:
+- A Cinema 4D submitter plugin with a scene checker.
+- A desktop control app, so workers do not need command-line use.
+- A clean browser dashboard for jobs, takes, workers, progress, logs, previews,
+  frame ownership, and render statistics.
+- Frame batching, so heavy scenes do not reload for every single frame.
+- Marked-take submission, grouped in the dashboard.
+- Worker colors, job status labels, folder open actions, archive/requeue/cancel
+  controls, and stale-worker recovery.
+- Cinema 4D output paths are preserved from Render Settings, including common
+  Cinema 4D tokens.
 
-- start DreamRender with one button
-- start or stop this machine's worker
-- start the monitor and open the dashboard
-- initialize the queue folder
-- open the queue folder
-- create a Desktop shortcut
-- set batch size and run diagnostics
-- keep the worker running automatically if it exits unexpectedly
-- reset the worker name to the current computer name
-- detect and adopt an already-running worker for this machine
-- stop the worker when the control app closes
+## Recommended Setup
 
-For artist-facing use, this is the preferred workflow. The command-line examples
-below are still useful for troubleshooting and automation.
+Use the same project path on every machine. For example, if the project is on
+drive `P:\` on the workstation, map it as `P:\` on the render node too.
 
-On Windows `cmd.exe`, use one-line commands. The backtick examples are for
-PowerShell only.
-
-You can run DreamRender without installing it by using:
-
-```bat
-C:\DreamRender\scripts\dreamrender.bat status --share "C:\DreamRenderShare"
-```
-
-Create a shared queue folder. This folder must be visible to every render node.
-
-```powershell
-dreamrender init-share --share "\\RenderServer\DreamRender"
-```
-
-Submit a job:
-
-```powershell
-dreamrender submit `
-  --share "\\RenderServer\DreamRender" `
-  --scene "P:\projects\shot_010\shot_010.c4d" `
-  --frames 1-120 `
-  --output "P:\renders\shot_010" `
-  --name "shot_010"
-```
-
-By default DreamRender stores the exact scene and output paths you submit. That
-is the right mode when every render machine has the project folder mapped the
-same way, because relative assets, caches, Redshift proxies, and output paths
-stay exactly where Cinema 4D expects them.
-
-If you want to copy only the `.c4d` file into the queue folder, add
-`--copy-scene`. Shared project paths are still recommended for real work because
-copying the scene does not collect textures, caches, proxies, or plugin assets.
-
-Run a worker on each machine:
-
-```powershell
-dreamrender worker `
-  --share "\\RenderServer\DreamRender" `
-  --c4d "C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe" `
-  --chunk-size 5
-```
-
-Or from `cmd.exe` without installing:
-
-```bat
-C:\DreamRender\scripts\start-worker-c4d2026.bat "\\RenderServer\DreamRender"
-```
-
-`--chunk-size 5` means each worker launches Cinema 4D once for five contiguous
-frames, instead of loading the scene once per frame. Increase it for heavy scenes
-if startup/load time dominates render time; decrease it if you want finer
-balancing between machines.
-
-Each worker machine needs regular Python 3.10 or newer. Do not use Cinema 4D's
-`c4dpy.exe` as the worker runtime; on some machines it can crash outside Cinema
-4D.
-
-Check status:
-
-```powershell
-dreamrender status --share "\\RenderServer\DreamRender"
-```
-
-Run the monitor:
-
-```powershell
-dreamrender monitor --share "\\RenderServer\DreamRender"
-```
-
-Or from `cmd.exe` without installing:
-
-```bat
-C:\DreamRender\scripts\start-monitor.bat "\\RenderServer\DreamRender"
-```
-
-Each machine running the monitor needs regular Python 3.10 or newer.
-
-Then open:
-
-```text
-http://127.0.0.1:8765
-```
-
-The dashboard can display browser-friendly outputs directly: PNG, JPG, WebP,
-and GIF. EXR and TIFF renders are detected, but browsers cannot display them by
-themselves. To get dashboard thumbnails for EXR/TIFF frames, install one of
-these on the machine running the monitor and make sure it is on `PATH`:
-ImageMagick (`magick`), OpenImageIO (`oiiotool`), or ffmpeg.
-
-## Cinema 4D plugin
-
-The Cinema 4D submitter is installed as a menu command plugin. Install it with:
-
-```bat
-C:\DreamRender\scripts\install-c4d-plugin-2026.bat
-```
-
-Restart Cinema 4D and look for `DreamRender Submit Render` in the Extensions
-menu or Command Manager. The plugin loads the submit dialog from:
-
-```text
-cinema4d/plugin/DreamRender.pyp
-cinema4d/DreamRenderSubmit.py
-```
-
-It opens a submit dialog with:
-
-- DreamRender share path
-- job name
-- frames per batch
-- render all marked takes
-- optional warning override
-- scene checker / preflight
-
-Start and end frame are read from Cinema 4D's active Render Settings frame
-range. The submitter respects Manual, Current Frame, All Frames, and Preview
-Range modes, then shows the detected range in the scene checker.
-
-Use `Check Scene` before submitting when you want a render-farm-style preflight.
-The submitter shows a table with Camera, Project, Textures, Render Engine,
-FPS, Output, Multipass, Format, Frame, Resolution, Batch, Queue, and Takes,
-with status icons, separate columns for state, result, and info, alternating row
-backgrounds, and a small progress indicator while checks run. Errors block
-submit. Warnings ask for confirmation unless `Ignore warnings on submit` is
-enabled.
-
-Frames per batch controls how many contiguous frames a worker claims and renders
-per Cinema 4D commandline launch for that job. Higher values reduce scene reload
-overhead; lower values balance work more evenly between machines.
-
-Enable marked-take submission when you want every checked/marked Take in Cinema
-4D's Take Manager to become its own render job. DreamRender groups those jobs
-together in the dashboard, passes `-take "Take Name"` to Cinema 4D commandline,
-and preserves the output path exactly as it is set in Cinema 4D Render Settings.
-Cinema 4D tokens such as `$prj` and `$take` are passed through to Cinema 4D, and
-DreamRender expands the common tokens only when searching for dashboard previews.
-Marked takes must have unique names. When marked takes use their own render
-settings, the submitter ignores the global render-settings dropdown and uses
-each take's render settings, output path, and frame range.
-
-The legacy `install-c4d-submitter-2026.bat` command now forwards to the plugin
-installer too, so existing shortcuts still install the plugin.
-
-When you submit, it saves a copy of the current document into a folder beside
-the project:
-
-```text
-YourProject/
-  DreamRenderJobs/
-    20260520-123456-a1b2c3d4/
-      YourScene_20260520-123456-a1b2c3d4.c4d
-```
-
-That saved copy is the scene sent to the queue. Because the folder sits inside
-or next to your mapped project folder, workers with the same drive mapping can
-resolve the same scene, assets, caches, Redshift proxies, and output path.
-
-## Command template
-
-Cinema 4D command line flags can vary by version and pipeline setup, so workers
-use a template. The default is:
-
-```text
-"{c4d}" -render "{scene}" {take_arg} -frame {start_frame} {end_frame}
-```
-
-DreamRender does not pass `-oimage` by default. Cinema 4D writes to the output
-path stored in the saved scene's Render Settings, so relative paths and Cinema
-4D tokens are interpreted by Cinema 4D exactly as they are in the project.
-
-You can override it:
-
-```powershell
-dreamrender worker `
-  --share "\\RenderServer\DreamRender" `
-  --c4d "C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe" `
-  --command-template '"{c4d}" -render "{scene}" {take_arg} -frame {start_frame} {end_frame}'
-```
-
-Available placeholders:
-
-- `{c4d}`
-- `{scene}`
-- `{take}`
-- `{take_arg}`
-- `{frame}`
-- `{start_frame}`
-- `{end_frame}`
-- `{output}`
-- `{job_id}`
-- `{job_dir}`
-- `{worker_id}`
-
-## Folder layout
+Use one shared queue folder that every machine can read and write:
 
 ```text
 DreamRenderShare/
   jobs/
-    job-id/
-      job.json
-      frames/
-        0001.json
-      logs/
   workers/
-    machine-name.json
 ```
+
+The queue folder can live on a NAS, a shared drive, or one of the machines.
+
+## Day-To-Day Workflow
+
+1. Start `scripts\start-dreamrender-app.bat`.
+2. In the app, choose the DreamRender share folder.
+3. Click `Start DreamRender` on every machine that should render.
+4. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
+5. Click `Check Scene`.
+6. Click `Submit Project`.
+7. Confirm `Save` when DreamRender asks to save the scene.
+8. Watch the dashboard.
+
+## Cinema 4D Plugin
+
+Install the plugin with:
+
+```bat
+scripts\install-c4d-plugin-2026.bat
+```
+
+Restart Cinema 4D 2026 after installing. The command appears as:
+
+```text
+Extensions > DreamRender Submit Render
+```
+
+The submitter reads the active Cinema 4D Render Settings for:
+
+- frame range
+- output path
+- output format
+- Redshift/multipass settings
+- marked takes and take-specific render settings
+
+DreamRender saves the current scene, then creates a separate job-scene copy in a
+`DreamRenderJobs` folder near the project. Workers render that copy, while output
+still goes to the path set in Cinema 4D Render Settings.
+
+## Dashboard
+
+The dashboard is opened from the DreamRender app. It shows:
+
+- grouped jobs and marked takes
+- current worker activity
+- done/rendering/queued/error states
+- progress bars and render timing
+- frame ownership by worker color
+- logs and browser-friendly previews
+- archive, requeue, cancel, pause, resume, and priority controls
+
+PNG, JPG, WebP, and GIF previews display directly in the browser. EXR/TIFF files
+need a converter on the monitor machine for thumbnails, such as ImageMagick,
+OpenImageIO, or ffmpeg.
+
+## Command Line
+
+The app is the preferred workflow. These commands are mainly for troubleshooting
+or automation.
+
+Run the app:
+
+```bat
+scripts\start-dreamrender-app.bat
+```
+
+Run a worker:
+
+```bat
+scripts\start-worker-c4d2026.bat "\\RenderServer\DreamRender"
+```
+
+Run the monitor:
+
+```bat
+scripts\start-monitor.bat "\\RenderServer\DreamRender"
+```
+
+Check queue status:
+
+```bat
+scripts\dreamrender.bat status --share "\\RenderServer\DreamRender"
+```
+
+## Development Install
+
+For editable Python development:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+DreamRender can also run without installing the Python package because the batch
+scripts set `PYTHONPATH` to the local `src` folder.
 
 ## Notes
 
-- Keep Cinema 4D, Redshift, plugins, OCIO, fonts, and assets consistent across machines.
-- Map project folders identically on every machine when you want scene, asset, cache, and output paths to resolve exactly.
-- Redshift licensing must allow rendering on each worker.
-- For the first version, frames are the unit of work. Chunking can be added later.
+- Use regular Python 3.10 or newer from python.org. Do not use Cinema 4D
+  `c4dpy.exe` for the worker.
+- Keep Cinema 4D, Redshift, plugins, OCIO, fonts, caches, and assets consistent
+  across machines.
+- Redshift licensing must allow command-line rendering on each worker.
+- Map project folders identically on every machine for the most predictable
+  output and asset behavior.
