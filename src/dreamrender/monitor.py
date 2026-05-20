@@ -31,6 +31,7 @@ HTML = r"""<!doctype html>
       --accent: #ff5538;
       --accent-2: #ffd43d;
       --good: #58c981;
+      --rendering: #ff8b3d;
       --info: #8b63f6;
       --bad: #ec6c79;
       --shadow: 0 18px 50px rgba(18, 22, 22, .10);
@@ -60,7 +61,21 @@ HTML = r"""<!doctype html>
     }
     aside { border-right: 1px solid var(--line); padding: 22px 20px; background: #eef4f2; }
     section { padding: 24px 28px; background: var(--shell); }
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .section-head h2 { margin: 0; }
     h2 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px; font-weight: 800; }
+    .status-legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .legend-item {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
+      padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+      background: #fbfcfa; color: #555e5d; font-size: 12px; font-weight: 750;
+      box-shadow: 0 2px 7px rgba(18,22,22,.04);
+    }
+    .legend-swatch { width: 18px; height: 18px; border-radius: 999px; border: 1px solid transparent; }
+    .legend-swatch.done { background: rgba(88, 201, 129, .92); border-color: rgba(88, 201, 129, .98); }
+    .legend-swatch.rendering { background: rgba(255, 139, 61, .92); border-color: rgba(255, 116, 48, .98); }
+    .legend-swatch.failed { background: rgba(236, 108, 121, .92); border-color: rgba(236, 108, 121, .98); }
+    .legend-swatch.queued { background: #e8ede9; border-color: #d9e0dc; }
     .worker {
       display: flex; gap: 12px; align-items: center; padding: 14px 12px; margin-bottom: 10px;
       border: 1px solid var(--line); background: var(--panel); border-radius: 20px; box-shadow: var(--soft-shadow);
@@ -111,13 +126,17 @@ HTML = r"""<!doctype html>
     .worker-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; padding: 0 20px 16px; }
     .worker-card { background: #f7faf8; border: 1px solid var(--line); border-left: 5px solid var(--worker-color); border-radius: 18px; padding: 11px 12px; }
     .worker-card strong { display: block; margin-bottom: 4px; }
+    .frames-label {
+      padding: 0 20px 8px; color: var(--muted); font-size: 11px;
+      font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    }
     .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(35px, 1fr)); gap: 6px; padding: 0 20px 18px; }
     .frame {
       height: 25px; border-radius: 10px; background: #e8ede9; color: #596161;
       font-size: 11px; font-weight: 750; display: grid; place-items: center; border: 1px solid transparent;
     }
     .frame.done { background: rgba(88, 201, 129, .20); border-color: rgba(88, 201, 129, .55); color: #19653b; }
-    .frame.rendering { background: rgba(255, 212, 61, .42); border-color: rgba(255, 185, 45, .75); color: #74510a; }
+    .frame.rendering { background: rgba(255, 139, 61, .30); border-color: rgba(255, 116, 48, .78); color: #8a3e12; }
     .frame.failed { background: rgba(236, 108, 121, .20); border-color: rgba(236, 108, 121, .65); color: #96323d; }
     .frame.queued { background: #e8ede9; }
     .frame.worker-owned {
@@ -160,6 +179,8 @@ HTML = r"""<!doctype html>
       aside { border-right: 0; border-bottom: 1px solid var(--line); }
       .job-head { grid-template-columns: 1fr; }
       header { align-items: flex-start; gap: 12px; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+      .status-legend { justify-content: flex-start; }
     }
   </style>
 </head>
@@ -177,7 +198,15 @@ HTML = r"""<!doctype html>
       <div id="workers"></div>
     </aside>
     <section>
-      <h2>Jobs</h2>
+      <div class="section-head">
+        <h2>Jobs</h2>
+        <div class="status-legend" aria-label="Frame status legend">
+          <span class="legend-item"><span class="legend-swatch done"></span>Done</span>
+          <span class="legend-item"><span class="legend-swatch rendering"></span>Rendering</span>
+          <span class="legend-item"><span class="legend-swatch failed"></span>Error</span>
+          <span class="legend-item"><span class="legend-swatch queued"></span>Queued</span>
+        </div>
+      </div>
       <div id="jobs" class="jobs"></div>
     </section>
   </main>
@@ -388,6 +417,7 @@ HTML = r"""<!doctype html>
           <div class="stats"><span>${j.progress.toFixed(1)}%</span><span>${esc(jobStatusLabel(j))}</span><span>batch: ${esc((j.metadata || {}).chunk_size || "--")}</span><span>${esc(statusText(j.counts))}</span></div>
           ${metrics(j)}
           ${workerMetrics(j)}
+          <div class="frames-label">Frames</div>
           <div class="frames">${j.frames.map(f => `<div onclick="openDetail('${j.id}', ${f.frame})" title="${esc(frameTitle(f))}" class="${frameClass(f.status)} ${f.worker_id ? "worker-owned" : ""}" ${frameStyle(f)}>${esc(f.frame)}</div>`).join("")}</div>
         </div>
       </article>`;
