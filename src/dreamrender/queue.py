@@ -539,10 +539,17 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
 def update_job_status_from_frames(job_dir: Path) -> None:
     job_path = job_dir / "job.json"
     job = read_json(job_path)
-    if job.get("status") in {"paused", "cancelled"}:
-        return
     frame_statuses = [read_json(path).get("status") for path in (job_dir / "frames").glob("*.json")]
     archive_when_done = job.get("metadata", {}).get("archive_when_done")
+    if job.get("status") == "cancelled":
+        if archive_when_done and "rendering" not in frame_statuses:
+            job["status"] = "archived"
+            job["finished_at"] = utc_now()
+            job["updated_at"] = utc_now()
+            write_json_atomic(job_path, job)
+        return
+    if job.get("status") == "paused":
+        return
     if frame_statuses and all(status == "done" for status in frame_statuses):
         job["status"] = "archived" if job.get("metadata", {}).get("archive_when_done") else "done"
         job["finished_at"] = utc_now()
@@ -903,6 +910,13 @@ def set_job_status(share: Share, job_id: str, status: str) -> None:
             read_json(path).get("status")
             for path in (share.jobs_dir / job_id / "frames").glob("*.json")
         ]
+        if job.get("status") == "cancelled" and "rendering" in frame_statuses:
+            metadata = dict(job.get("metadata", {}))
+            metadata["archive_when_done"] = True
+            job["metadata"] = metadata
+            job["updated_at"] = utc_now()
+            write_json_atomic(job_path, job)
+            return
         if "rendering" in frame_statuses:
             metadata = dict(job.get("metadata", {}))
             metadata["archive_when_done"] = True
