@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+import subprocess
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -82,6 +84,7 @@ HTML = r"""<!doctype html>
       color: var(--ink);
     }
     .worker > div:first-of-type { font-weight: 800; }
+    .worker .subtle, .worker-card .subtle { color: rgba(14,14,13,.72); font-weight: 650; }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
     .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .jobs { display: grid; gap: 18px; }
@@ -96,8 +99,6 @@ HTML = r"""<!doctype html>
       background: var(--panel); border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
       box-shadow: var(--soft-shadow);
     }
-    .job.dragging { opacity: .56; outline: 2px solid var(--rendering); }
-    .job.drop-target { box-shadow: inset 0 0 0 2px var(--rendering), var(--soft-shadow); }
     .job-group .job { background: #f8fbf9; box-shadow: none; }
     .job-head { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 18px 20px 15px; cursor: pointer; }
     .job-body { display: block; }
@@ -117,12 +118,6 @@ HTML = r"""<!doctype html>
     .job-status.rendering { background: var(--rendering); border-color: var(--rendering); color: white; }
     .job-status.failed { background: var(--bad); border-color: var(--bad); color: white; }
     .job-status.queued { background: #e8ede9; border-color: #d9e0dc; color: #555e5d; }
-    .drag-handle {
-      width: 28px; height: 28px; display: inline-grid; place-items: center;
-      border: 0; border-radius: 999px; background: #eef3ef; color: #69716f;
-      cursor: grab; font-weight: 900; line-height: 1;
-    }
-    .drag-handle:active { cursor: grabbing; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     .actions { display: flex; align-items: start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     button {
@@ -132,8 +127,11 @@ HTML = r"""<!doctype html>
     }
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
-    .progress { height: 10px; background: #e9eee9; border-top: 1px solid var(--line); overflow: hidden; }
-    .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 0 999px 999px 0; }
+    .job-progress {
+      width: min(340px, 100%); height: 12px; margin-top: 12px;
+      background: #111111; border-radius: 999px; overflow: hidden; padding: 2px;
+    }
+    .bar { height: 100%; background: var(--job-color, var(--accent)); width: 0%; transition: width .25s ease; border-radius: 999px; }
     .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 13px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
     .stats span {
       background: #eef3ef; color: #555e5d; border: 1px solid var(--line);
@@ -268,7 +266,7 @@ HTML = r"""<!doctype html>
   <script>
     let selectedJobId = null;
     let selectedFrame = null;
-    let draggedJobId = null;
+    let currentJobOrder = [];
     const collapsedJobs = new Set(JSON.parse(localStorage.getItem("dreamrender.collapsedJobs") || "[]"));
     const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -308,6 +306,18 @@ HTML = r"""<!doctype html>
       for (const jobId of jobIds) body.append("job_ids", jobId);
       await fetch("/api/action", { method: "POST", body });
       await refresh();
+    }
+    async function moveJob(jobId, direction) {
+      const order = [...currentJobOrder];
+      const index = order.indexOf(jobId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= order.length) return;
+      [order[index], order[target]] = [order[target], order[index]];
+      await reorderJobs(order);
+    }
+    async function openRenderFolder(jobId) {
+      const body = new URLSearchParams({ action: "open_output", job_id: jobId });
+      await fetch("/api/action", { method: "POST", body });
     }
     async function detailAction(kind) {
       if (!selectedJobId) return;
@@ -373,7 +383,12 @@ HTML = r"""<!doctype html>
       const hasQueued = (counts.queued || 0) > 0 || (counts.failed || 0) > 0;
       const isDone = job.status === "done" || job.status === "archived";
       const canCancel = !isDone && job.status !== "cancelled" && (hasRendering || hasQueued || job.status === "paused" || job.status === "draining");
-      const actions = [`<button onclick="openDetail('${job.id}')">Details</button>`];
+      const actions = [
+        `<button title="Move up in queue priority" onclick="moveJob('${job.id}', -1)">Up</button>`,
+        `<button title="Move down in queue priority" onclick="moveJob('${job.id}', 1)">Down</button>`,
+        `<button onclick="openDetail('${job.id}')">Details</button>`,
+        `<button onclick="openRenderFolder('${job.id}')">Open Render Folder</button>`
+      ];
       if (job.status === "paused") actions.push(`<button onclick="action('resume','${job.id}')">Resume</button>`);
       else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}')">Pause</button>`);
       if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}')">Stop After Batch</button>`);
@@ -459,11 +474,11 @@ HTML = r"""<!doctype html>
         <div class="job-head" onclick="toggleJob('${j.id}')">
           <div>
             <div class="job-title-row">
-              <span class="drag-handle" draggable="true" title="Drag to change priority" onclick="event.stopPropagation()">::</span>
               <div class="job-title">${esc(j.name)}</div>
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
             </div>
             <div class="meta">${j.progress.toFixed(1)}% &middot; ${esc(jobStatusLabel(j))} &middot; ${esc(statusText(j.counts))}</div>
+            <div class="job-progress"><div class="bar" style="width:${j.progress}%"></div></div>
             <div class="job-detail-lines">
               <div class="meta">${esc(j.id)}</div>
               <div class="meta">${esc((j.metadata || {}).take_name ? `Take: ${(j.metadata || {}).take_name}` : j.scene)}</div>
@@ -474,7 +489,6 @@ HTML = r"""<!doctype html>
             ${jobActions(j)}
           </div>
         </div>
-        <div class="progress"><div class="bar" style="width:${j.progress}%"></div></div>
         <div class="job-body">
           <div class="stats"><span>${j.progress.toFixed(1)}%</span><span>${esc(jobStatusLabel(j))}</span><span>batch: ${esc((j.metadata || {}).chunk_size || "--")}</span></div>
           ${metrics(j)}
@@ -543,42 +557,9 @@ HTML = r"""<!doctype html>
     function closeDetail() {
       document.getElementById("detail").close();
     }
-    function setupJobDrag() {
-      document.querySelectorAll(".job").forEach(jobEl => {
-        const handle = jobEl.querySelector(".drag-handle");
-        if (!handle) return;
-        handle.addEventListener("dragstart", event => {
-          draggedJobId = jobEl.dataset.jobId;
-          jobEl.classList.add("dragging");
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", draggedJobId);
-        });
-        handle.addEventListener("dragend", () => {
-          jobEl.classList.remove("dragging");
-          document.querySelectorAll(".job.drop-target").forEach(el => el.classList.remove("drop-target"));
-          draggedJobId = null;
-        });
-        jobEl.addEventListener("dragover", event => {
-          if (!draggedJobId) return;
-          event.preventDefault();
-          const dragging = document.querySelector(".job.dragging");
-          if (!dragging || dragging === jobEl) return;
-          document.querySelectorAll(".job.drop-target").forEach(el => el.classList.remove("drop-target"));
-          jobEl.classList.add("drop-target");
-          const rect = jobEl.getBoundingClientRect();
-          const before = event.clientY < rect.top + rect.height / 2;
-          jobEl.parentNode.insertBefore(dragging, before ? jobEl : jobEl.nextSibling);
-        });
-        jobEl.addEventListener("drop", async event => {
-          event.preventDefault();
-          const order = [...document.querySelectorAll(".job[data-job-id]")].map(el => el.dataset.jobId);
-          await reorderJobs(order);
-        });
-      });
-    }
     async function refresh() {
-      if (draggedJobId) return;
       const data = await fetch("/api/snapshot").then(r => r.json());
+      currentJobOrder = data.jobs.map(job => job.id);
       document.getElementById("share").textContent = data.share;
       document.getElementById("updated").textContent = new Date(data.generated_at).toLocaleString();
       document.getElementById("workers").innerHTML = data.workers.length ? data.workers.map(w => `
@@ -593,7 +574,6 @@ HTML = r"""<!doctype html>
       document.getElementById("jobs").innerHTML = data.jobs.length
         ? `${grouped.groups.map(renderGroup).join("")}${grouped.standalone.map(renderJob).join("")}`
         : `<div class="empty">No jobs in the queue.</div>`;
-      setupJobDrag();
     }
     refresh();
     setInterval(refresh, 2500);
@@ -687,10 +667,33 @@ class MonitorHandler(BaseHTTPRequestHandler):
         elif action == "requeue_frames":
             frames = [int(value) for value in values.get("frames", [])]
             requeue_frames(self.share, job_id, frames)
+        elif action == "open_output":
+            try:
+                self.open_output_folder(job_id)
+            except OSError as exc:
+                self.send_error(HTTPStatus.NOT_FOUND, str(exc))
+                return
         else:
             self.send_error(HTTPStatus.BAD_REQUEST, "Unknown action")
             return
         self.send_json({"ok": True})
+
+    def open_output_folder(self, job_id: str) -> None:
+        job = get_job_detail(self.share, job_id)
+        output_text = str(job.get("output") or "")
+        if not output_text:
+            raise FileNotFoundError("Job has no output path.")
+        output = Path(output_text)
+        folder = output.parent if output.suffix else output
+        while not folder.exists() and folder != folder.parent:
+            folder = folder.parent
+        if not folder.exists():
+            raise FileNotFoundError(folder)
+        if os.name == "nt":
+            os.startfile(str(folder))  # type: ignore[attr-defined]
+        elif os.name == "posix":
+            opener = "open" if subprocess.run(["which", "open"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0 else "xdg-open"
+            subprocess.Popen([opener, str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def send_json(self, payload: dict[str, object]) -> None:
         body = json.dumps(payload).encode("utf-8")
