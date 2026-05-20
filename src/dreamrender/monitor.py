@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .queue import Share, find_frame_preview, get_job_detail, queue_snapshot, read_frame_log, requeue_failed, requeue_frames, set_job_status
+from .queue import Share, find_frame_preview, get_job_detail, queue_snapshot, read_frame_log, requeue_failed, requeue_frames, set_job_priorities, set_job_status
 
 
 HTML = r"""<!doctype html>
@@ -95,8 +95,10 @@ HTML = r"""<!doctype html>
       background: var(--panel); border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
       box-shadow: var(--soft-shadow);
     }
+    .job.dragging { opacity: .56; outline: 2px solid var(--rendering); }
+    .job.drop-target { box-shadow: inset 0 0 0 2px var(--rendering), var(--soft-shadow); }
     .job-group .job { background: #f8fbf9; box-shadow: none; }
-    .job-head { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 18px 20px 15px; }
+    .job-head { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 18px 20px 15px; cursor: pointer; }
     .job-body { display: block; }
     .job.collapsed .job-body { display: none; }
     .job.collapsed .job-detail-lines { display: none; }
@@ -135,7 +137,11 @@ HTML = r"""<!doctype html>
     .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
     .metric-value { font-size: 24px; font-weight: 900; margin-top: 4px; color: var(--ink); letter-spacing: 0; }
     .worker-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; padding: 0 20px 16px; }
-    .worker-card { background: #f7faf8; border: 1px solid var(--line); border-left: 5px solid var(--worker-color); border-radius: 18px; padding: 11px 12px; }
+    .worker-card {
+      background: color-mix(in srgb, var(--worker-color) 18%, white);
+      border: 1px solid color-mix(in srgb, var(--worker-color) 58%, #dfe4e1);
+      border-radius: 18px; padding: 11px 12px;
+    }
     .worker-card strong { display: block; margin-bottom: 4px; }
     .frames-label {
       padding: 0 20px 8px; color: var(--muted); font-size: 11px;
@@ -218,7 +224,7 @@ HTML = r"""<!doctype html>
           <span class="legend-item"><span class="legend-swatch queued"></span>Queued</span>
         </div>
       </div>
-      <div id="jobs" class="jobs"></div>
+      <div id="jobs" class="jobs job-drop-list"></div>
     </section>
   </main>
   <dialog id="detail">
@@ -256,6 +262,7 @@ HTML = r"""<!doctype html>
   <script>
     let selectedJobId = null;
     let selectedFrame = null;
+    let draggedJobId = null;
     const collapsedJobs = new Set(JSON.parse(localStorage.getItem("dreamrender.collapsedJobs") || "[]"));
     const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -281,6 +288,12 @@ HTML = r"""<!doctype html>
     }
     async function action(kind, jobId) {
       const body = new URLSearchParams({ action: kind, job_id: jobId });
+      await fetch("/api/action", { method: "POST", body });
+      await refresh();
+    }
+    async function reorderJobs(jobIds) {
+      const body = new URLSearchParams({ action: "reorder" });
+      for (const jobId of jobIds) body.append("job_ids", jobId);
       await fetch("/api/action", { method: "POST", body });
       await refresh();
     }
@@ -339,6 +352,21 @@ HTML = r"""<!doctype html>
       if (job.status === "draining") return ["rendering", "Draining"];
       return ["queued", "Queued"];
     }
+    function jobActions(job) {
+      const counts = job.counts || {};
+      const hasRendering = (counts.rendering || 0) > 0;
+      const hasQueued = (counts.queued || 0) > 0 || (counts.failed || 0) > 0;
+      const isDone = job.status === "done" || job.status === "archived";
+      const canCancel = !isDone && job.status !== "cancelled" && (hasRendering || hasQueued || job.status === "paused" || job.status === "draining");
+      const actions = [`<button onclick="openDetail('${job.id}')">Details</button>`];
+      if (job.status === "paused") actions.push(`<button onclick="action('resume','${job.id}')">Resume</button>`);
+      else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}')">Pause</button>`);
+      if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}')">Stop After Batch</button>`);
+      if (job.status !== "archived") actions.push(`<button onclick="action('archive','${job.id}')">Archive</button>`);
+      if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}')">Requeue Failed</button>`);
+      if (canCancel) actions.push(`<button onclick="action('cancel','${job.id}')">Cancel</button>`);
+      return actions.join("");
+    }
     function formatSeconds(seconds) {
       if (seconds == null) return "--";
       seconds = Math.max(0, Math.round(seconds));
@@ -387,7 +415,7 @@ HTML = r"""<!doctype html>
         byId.get(meta.group_id).jobs.push(job);
       }
       for (const group of groups) {
-        group.jobs.sort((a, b) => ((a.metadata || {}).group_index || 0) - ((b.metadata || {}).group_index || 0));
+        group.jobs.sort((a, b) => (a.priority ?? 5000) - (b.priority ?? 5000) || ((a.metadata || {}).group_index || 0) - ((b.metadata || {}).group_index || 0));
       }
       return { groups, standalone };
     }
@@ -412,11 +440,11 @@ HTML = r"""<!doctype html>
     function renderJob(j) {
       const collapsed = collapsedJobs.has(j.id);
       const [statusClass, statusLabel] = jobState(j);
-      return `<article class="job ${collapsed ? "collapsed" : ""}">
-        <div class="job-head">
+      return `<article class="job ${collapsed ? "collapsed" : ""}" draggable="true" data-job-id="${esc(j.id)}" data-priority="${esc(j.priority ?? 5000)}">
+        <div class="job-head" onclick="toggleJob('${j.id}')">
           <div>
             <div class="job-title-row">
-              <div class="job-title" onclick="openDetail('${j.id}')" style="cursor:pointer">${esc(j.name)}</div>
+              <div class="job-title">${esc(j.name)}</div>
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
             </div>
             <div class="meta">${j.progress.toFixed(1)}% &middot; ${esc(jobStatusLabel(j))} &middot; ${esc(statusText(j.counts))}</div>
@@ -426,18 +454,12 @@ HTML = r"""<!doctype html>
               <div class="meta">${esc(j.output)}</div>
             </div>
           </div>
-          <div class="actions">
-            <button onclick="openDetail('${j.id}')">Details</button>
-            <button onclick="toggleJob('${j.id}')">${collapsed ? "Unfold" : "Fold"}</button>
-            <button onclick="action('${j.status === "paused" ? "resume" : "pause"}','${j.id}')">${j.status === "paused" ? "Resume" : "Pause"}</button>
-            <button onclick="action('drain','${j.id}')">Drain</button>
-            <button onclick="action('archive','${j.id}')">Archive</button>
-            <button onclick="action('requeue','${j.id}')">Requeue Failed</button>
-            <button onclick="action('cancel','${j.id}')">Cancel</button>
+          <div class="actions" onclick="event.stopPropagation()">
+            ${jobActions(j)}
           </div>
         </div>
+        <div class="progress"><div class="bar" style="width:${j.progress}%"></div></div>
         <div class="job-body">
-          <div class="progress"><div class="bar" style="width:${j.progress}%"></div></div>
           <div class="stats"><span>${j.progress.toFixed(1)}%</span><span>${esc(jobStatusLabel(j))}</span><span>batch: ${esc((j.metadata || {}).chunk_size || "--")}</span></div>
           ${metrics(j)}
           ${workerMetrics(j)}
@@ -462,7 +484,7 @@ HTML = r"""<!doctype html>
             <button onclick="actionGroup('cancel','${group.id}')">Cancel All</button>
           </div>
         </div>
-        <div class="group-jobs">${group.jobs.map(renderJob).join("")}</div>
+        <div class="group-jobs job-drop-list">${group.jobs.map(renderJob).join("")}</div>
       </div>`;
     }
     async function openDetail(jobId, frameNumber = null) {
@@ -505,7 +527,39 @@ HTML = r"""<!doctype html>
     function closeDetail() {
       document.getElementById("detail").close();
     }
+    function setupJobDrag() {
+      document.querySelectorAll(".job").forEach(jobEl => {
+        jobEl.addEventListener("dragstart", event => {
+          draggedJobId = jobEl.dataset.jobId;
+          jobEl.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedJobId);
+        });
+        jobEl.addEventListener("dragend", () => {
+          jobEl.classList.remove("dragging");
+          document.querySelectorAll(".job.drop-target").forEach(el => el.classList.remove("drop-target"));
+          draggedJobId = null;
+        });
+        jobEl.addEventListener("dragover", event => {
+          if (!draggedJobId) return;
+          event.preventDefault();
+          const dragging = document.querySelector(".job.dragging");
+          if (!dragging || dragging === jobEl) return;
+          document.querySelectorAll(".job.drop-target").forEach(el => el.classList.remove("drop-target"));
+          jobEl.classList.add("drop-target");
+          const rect = jobEl.getBoundingClientRect();
+          const before = event.clientY < rect.top + rect.height / 2;
+          jobEl.parentNode.insertBefore(dragging, before ? jobEl : jobEl.nextSibling);
+        });
+        jobEl.addEventListener("drop", async event => {
+          event.preventDefault();
+          const order = [...document.querySelectorAll(".job[data-job-id]")].map(el => el.dataset.jobId);
+          await reorderJobs(order);
+        });
+      });
+    }
     async function refresh() {
+      if (draggedJobId) return;
       const data = await fetch("/api/snapshot").then(r => r.json());
       document.getElementById("share").textContent = data.share;
       document.getElementById("updated").textContent = new Date(data.generated_at).toLocaleString();
@@ -521,6 +575,7 @@ HTML = r"""<!doctype html>
       document.getElementById("jobs").innerHTML = data.jobs.length
         ? `${grouped.groups.map(renderGroup).join("")}${grouped.standalone.map(renderJob).join("")}`
         : `<div class="empty">No jobs in the queue.</div>`;
+      setupJobDrag();
     }
     refresh();
     setInterval(refresh, 2500);
@@ -587,6 +642,14 @@ class MonitorHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         values = parse_qs(self.rfile.read(length).decode("utf-8"))
         action = values.get("action", [""])[0]
+        if action == "reorder":
+            job_ids = values.get("job_ids", [])
+            if not job_ids:
+                self.send_error(HTTPStatus.BAD_REQUEST, "Missing job_ids")
+                return
+            set_job_priorities(self.share, job_ids)
+            self.send_json({"ok": True})
+            return
         job_id = values.get("job_id", [""])[0]
         if not job_id:
             self.send_error(HTTPStatus.BAD_REQUEST, "Missing job_id")

@@ -254,7 +254,14 @@ def submit_job(
 def list_jobs(share: Share) -> list[Path]:
     if not share.jobs_dir.exists():
         return []
-    return sorted(path for path in share.jobs_dir.iterdir() if (path / "job.json").exists())
+    def sort_key(path: Path) -> tuple[int, str, str]:
+        try:
+            job = read_json(path / "job.json")
+        except (FileNotFoundError, json.JSONDecodeError):
+            return (999_999, "", path.name)
+        return (int(job.get("priority", 5000)), str(job.get("created_at", "")), path.name)
+
+    return sorted((path for path in share.jobs_dir.iterdir() if (path / "job.json").exists()), key=sort_key)
 
 
 def list_visible_jobs(share: Share, include_archived: bool = False) -> list[Path]:
@@ -566,6 +573,7 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
         "scene": job.get("scene"),
         "output": job.get("output"),
         "path_mode": job.get("path_mode"),
+        "priority": int(job.get("priority", 5000)),
         "metadata": job.get("metadata", {}),
         "counts": counts,
         "progress": (done / total * 100.0) if total else 0.0,
@@ -854,7 +862,7 @@ def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, An
     }
     seen_job_ids = set()
     jobs = []
-    for job_dir in reversed(list_visible_jobs(share, include_archived)):
+    for job_dir in list_visible_jobs(share, include_archived):
         seen_job_ids.add(job_dir.name)
         summary = summarize_job(job_dir)
         archive_pending = summary.get("metadata", {}).get("archive_when_done")
@@ -903,6 +911,20 @@ def set_job_status(share: Share, job_id: str, status: str) -> None:
     job["status"] = status
     job["updated_at"] = utc_now()
     write_json_atomic(job_path, job)
+
+
+def set_job_priorities(share: Share, job_ids: list[str]) -> None:
+    for index, job_id in enumerate(job_ids):
+        job_path = share.jobs_dir / job_id / "job.json"
+        if not job_path.exists():
+            continue
+        with FileLock(job_path.with_suffix(".lock")) as locked:
+            if not locked:
+                continue
+            job = read_json(job_path)
+            job["priority"] = index
+            job["updated_at"] = utc_now()
+            write_json_atomic(job_path, job)
 
 
 def requeue_frames(share: Share, job_id: str, frames: list[int]) -> int:
