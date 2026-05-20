@@ -428,6 +428,9 @@ class SceneCheckTableArea(gui.GeUserArea):
     HEADER_H = 30
     ROW_H = 27
     PAD_X = 12
+    SCROLL_W = 12
+    SCROLL_H = 12
+    CONTENT_W = 1180
 
     def __init__(self):
         super(SceneCheckTableArea, self).__init__()
@@ -436,6 +439,8 @@ class SceneCheckTableArea(gui.GeUserArea):
         self.spinner = ""
         self._width = self.MIN_W
         self._height = self.MIN_H
+        self._scroll_x = 0
+        self._scroll_y = 0
 
     def GetMinSize(self):
         return self.MIN_W, self.MIN_H
@@ -457,21 +462,71 @@ class SceneCheckTableArea(gui.GeUserArea):
         self.OffScreenOn()
         width = max(1, int(x2) - int(x1) + 1)
         height = max(1, int(y2) - int(y1) + 1)
+        self._width = width
+        self._height = height
+        self._clamp_scroll()
         self._fill(0, 0, width, height, (0.115, 0.118, 0.124))
         self._draw_header(width)
         for index, row in enumerate(self.rows):
-            top = self.HEADER_H + index * self.ROW_H
+            top = self.HEADER_H + index * self.ROW_H - self._scroll_y
             if top > height:
                 break
+            if top + self.ROW_H < self.HEADER_H:
+                continue
             self._draw_row(index, row, top, width)
+        self._draw_scrollbars(width, height)
+
+    def InputEvent(self, msg):
+        if msg.GetInt32(c4d.BFM_INPUT_DEVICE) != c4d.BFM_INPUT_MOUSE:
+            return False
+        position = self._event_position(msg)
+        if position:
+            x, y = position
+            if self._max_scroll_x() > 0 and y >= self._height - self.SCROLL_H:
+                channel = msg.GetInt32(c4d.BFM_INPUT_CHANNEL)
+                if channel == c4d.BFM_INPUT_MOUSELEFT and msg.GetInt32(c4d.BFM_INPUT_VALUE) != 0:
+                    ratio = max(0.0, min(1.0, float(x) / float(max(1, self._width - self.SCROLL_W))))
+                    self._set_scroll_x(int(ratio * self._max_scroll_x()))
+                    return True
+        channel = msg.GetInt32(c4d.BFM_INPUT_CHANNEL)
+        wheel_channel = getattr(c4d, "BFM_INPUT_MOUSEWHEEL", None)
+        if wheel_channel is not None and channel == wheel_channel:
+            delta = msg.GetInt32(c4d.BFM_INPUT_VALUE)
+            if delta > 0:
+                self._set_scroll_y(self._scroll_y - self.ROW_H * 2)
+            elif delta < 0:
+                self._set_scroll_y(self._scroll_y + self.ROW_H * 2)
+            return True
+        return False
+
+    def _event_position(self, msg):
+        try:
+            x = msg.GetInt32(c4d.BFM_INPUT_X)
+            y = msg.GetInt32(c4d.BFM_INPUT_Y)
+        except Exception:
+            return None
+        for converter_name in ("Screen2Local", "Global2Local"):
+            converter = getattr(self, converter_name, None)
+            if converter is None:
+                continue
+            try:
+                result = converter()
+                if isinstance(result, tuple):
+                    if len(result) == 2:
+                        return int(x - result[0]), int(y - result[1])
+                    if len(result) >= 3:
+                        return int(result[1]), int(result[2])
+            except Exception:
+                pass
+        return int(x), int(y)
 
     def _columns(self, width):
         icon_w = 42
-        check_w = 140
-        state_w = 95
-        result_w = 230
-        info_w = max(160, width - self.PAD_X * 2 - icon_w - check_w - state_w - result_w)
-        x = self.PAD_X
+        check_w = 160
+        state_w = 105
+        result_w = 260
+        info_w = max(460, self.CONTENT_W - self.PAD_X * 2 - icon_w - check_w - state_w - result_w)
+        x = self.PAD_X - self._scroll_x
         columns = []
         for w in (icon_w, check_w, state_w, result_w, info_w):
             columns.append((x, x + w))
@@ -501,8 +556,8 @@ class SceneCheckTableArea(gui.GeUserArea):
             icon,
             row.get("label", ""),
             report_state_text(level),
-            compact_text(row.get("message"), 34),
-            compact_text(row.get("info"), 72),
+            row.get("message", ""),
+            row.get("info", ""),
         )
         colors = (
             color,
@@ -530,6 +585,53 @@ class SceneCheckTableArea(gui.GeUserArea):
     def _line(self, x1, y1, x2, y2, color):
         self.DrawSetPen(c4d.Vector(color[0], color[1], color[2]))
         self.DrawLine(int(x1), int(y1), int(x2), int(y2))
+
+    def _content_height(self):
+        return self.HEADER_H + len(self.rows) * self.ROW_H
+
+    def _visible_width(self):
+        return max(1, self._width - self.SCROLL_W)
+
+    def _visible_height(self):
+        return max(1, self._height - self.SCROLL_H)
+
+    def _max_scroll_x(self):
+        return max(0, self.CONTENT_W - self._visible_width())
+
+    def _max_scroll_y(self):
+        return max(0, self._content_height() - self._visible_height())
+
+    def _clamp_scroll(self):
+        self._scroll_x = max(0, min(self._scroll_x, self._max_scroll_x()))
+        self._scroll_y = max(0, min(self._scroll_y, self._max_scroll_y()))
+
+    def _set_scroll_y(self, value):
+        self._scroll_y = max(0, min(int(value), self._max_scroll_y()))
+        self.Redraw()
+
+    def _set_scroll_x(self, value):
+        self._scroll_x = max(0, min(int(value), self._max_scroll_x()))
+        self.Redraw()
+
+    def _draw_scrollbars(self, width, height):
+        if self._max_scroll_y() > 0:
+            track_x1 = width - self.SCROLL_W
+            track_y1 = self.HEADER_H
+            track_y2 = height - self.SCROLL_H
+            self._fill(track_x1, track_y1, width, track_y2, (0.090, 0.092, 0.098))
+            usable = max(1, track_y2 - track_y1 - 24)
+            thumb_h = max(24, int((self._visible_height() / float(max(1, self._content_height()))) * (track_y2 - track_y1)))
+            thumb_y = track_y1 + int((self._scroll_y / float(max(1, self._max_scroll_y()))) * usable)
+            self._fill(track_x1 + 2, thumb_y, width - 3, thumb_y + thumb_h, (0.32, 0.34, 0.35))
+        if self._max_scroll_x() > 0:
+            track_x1 = 0
+            track_x2 = width - self.SCROLL_W
+            track_y1 = height - self.SCROLL_H
+            self._fill(track_x1, track_y1, track_x2, height, (0.090, 0.092, 0.098))
+            usable = max(1, track_x2 - track_x1 - 36)
+            thumb_w = max(36, int((self._visible_width() / float(max(1, self.CONTENT_W))) * (track_x2 - track_x1)))
+            thumb_x = track_x1 + int((self._scroll_x / float(max(1, self._max_scroll_x()))) * usable)
+            self._fill(thumb_x, track_y1 + 2, thumb_x + thumb_w, height - 3, (0.32, 0.34, 0.35))
 
     def _text(self, text, x, y, color, bold=False, bg=None):
         self.DrawSetFont(c4d.FONT_BOLD if bold else c4d.FONT_STANDARD)
@@ -1161,7 +1263,10 @@ class DreamRenderDialog(gui.GeDialog):
 
         row = build_row()
         rows = list(self.check_rows)
-        rows.append(row)
+        if rows and rows[-1].get("message") == "checking..." and rows[-1].get("label") == row.get("label"):
+            rows[-1] = row
+        else:
+            rows.append(row)
         self.update_check_table(rows)
         self.check_step_index += 1
         self.check_step_phase = "show"
