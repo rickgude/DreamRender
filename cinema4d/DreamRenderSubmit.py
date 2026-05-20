@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import webbrowser
 import uuid
 from datetime import datetime, timezone
@@ -631,6 +630,143 @@ def marked_take_output_check(doc, marked_takes):
     return level, "marked take output issue", "; ".join(details[:3])
 
 
+def scene_report_step_builders(doc, share, output, start, end, chunk_size, submit_marked_takes):
+    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
+    take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
+
+    def camera_row():
+        level, message, info = active_camera_info(doc)
+        return {"label": "CAMERA", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def project_row():
+        document_folder = doc.GetDocumentPath()
+        document_name = get_document_name(doc)
+        if document_folder:
+            level, message, info = CHECK_OK, "scene saved", os.path.join(document_folder, document_name)
+        else:
+            level, message, info = CHECK_ERROR, "scene not saved", "Save the Cinema 4D file once before submitting"
+        return {"label": "PROJECT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def textures_row():
+        assets, asset_error = collect_scene_assets(doc)
+        project = get_project_folder(doc)
+        document_folder = doc.GetDocumentPath()
+        if asset_error:
+            level, message, info = CHECK_WARNING, "could not inspect assets", str(asset_error)
+        else:
+            missing = []
+            external = []
+            for asset in assets:
+                path = asset_text(asset, ("filename", "assetname", "name", "url", "nodePath"))
+                if not path:
+                    continue
+                normalized = normalize_asset_path(path, project)
+                if not asset_exists(asset, path, project):
+                    missing.append(path)
+                elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
+                    external.append(normalized)
+            if missing:
+                level, message, info = CHECK_ERROR, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0])
+            elif external:
+                level, message, info = CHECK_WARNING, "external asset paths found", "%d outside project; workers need same mapping" % len(external)
+            else:
+                level, message, info = CHECK_OK, "all assets found", "%d assets checked" % len(assets)
+        return {"label": "TEXTURES", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def render_engine_row():
+        level, message, info = render_engine_info(doc)
+        return {"label": "RENDERENGINE", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def fps_row():
+        level, message, info = fps_info(doc)
+        return {"label": "FPS", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def output_row():
+        if take_driven:
+            level, message, info = marked_take_output_check(doc, marked_takes)
+        else:
+            level, message, info = output_folder_check(output)
+        return {"label": "OUTPUT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def multipass_row():
+        level, message, info = multipass_info(doc)
+        return {"label": "MULTIPASS", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def format_row():
+        level, message, info = format_info(doc, output)
+        return {"label": "FORMAT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def frame_row():
+        if take_driven:
+            level, message, info = CHECK_OK, "marked take frame ranges", "%d takes use their own render settings" % len(marked_takes)
+        elif end < start:
+            level, message, info = CHECK_ERROR, "invalid range", "%d-%d" % (start, end)
+        elif start == end:
+            level, message, info = CHECK_OK, "single frame", str(start)
+        else:
+            level, message, info = CHECK_OK, "frame range", "%d-%d" % (start, end)
+        return {"label": "FRAME", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def resolution_row():
+        level, message, info = resolution_info(doc)
+        return {"label": "RESOLUTION", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def batch_row():
+        if chunk_size < 1:
+            level, message, info = CHECK_ERROR, "invalid frames per batch", str(chunk_size)
+        else:
+            level, message, info = CHECK_OK, "frames per batch", str(chunk_size)
+        return {"label": "BATCH", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def queue_row():
+        if share and os.path.isdir(share):
+            writable, reason = probe_writable_folder(share)
+            if writable:
+                level, message, info = CHECK_OK, "DreamRender share writable", share
+            else:
+                level, message, info = CHECK_ERROR, "DreamRender share not writable", reason
+        elif share:
+            level, message, info = CHECK_ERROR, "DreamRender share inaccessible", share
+        else:
+            level, message, info = CHECK_ERROR, "DreamRender share missing", ""
+        return {"label": "QUEUE", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def takes_row():
+        if submit_marked_takes:
+            if not marked_takes:
+                level, message, info = CHECK_ERROR, "no marked takes found", ""
+            else:
+                labels = [take_name(take) for take in marked_takes]
+                duplicates = sorted(set(label for label in labels if labels.count(label) > 1))
+                if duplicates:
+                    level, message, info = CHECK_ERROR, "duplicate take names", ", ".join(duplicates)
+                else:
+                    render_data_names = sorted(set(render_data_name(item) for item in marked_take_render_data(doc, marked_takes)))
+                    if len(render_data_names) > 1:
+                        level, message, info = CHECK_OK, "marked takes ready", "%d takes, %d render settings" % (len(marked_takes), len(render_data_names))
+                    else:
+                        level, message, info = CHECK_OK, "marked takes ready", "%d takes" % len(marked_takes)
+        else:
+            level, message, info = CHECK_OK, "single render job", "marked takes disabled"
+        return {"label": "TAKES", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    return [
+        ("CAMERA", camera_row),
+        ("PROJECT", project_row),
+        ("TEXTURES", textures_row),
+        ("RENDERENGINE", render_engine_row),
+        ("FPS", fps_row),
+        ("OUTPUT", output_row),
+        ("MULTIPASS", multipass_row),
+        ("FORMAT", format_row),
+        ("FRAME", frame_row),
+        ("RESOLUTION", resolution_row),
+        ("BATCH", batch_row),
+        ("QUEUE", queue_row),
+        ("TAKES", takes_row),
+    ]
+
+
 def same_or_child(path, root):
     if not path or not root:
         return False
@@ -856,106 +992,7 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
 
 
 def farm_style_scene_report(doc, share, output, start, end, chunk_size, submit_marked_takes):
-    rows = []
-    marked_takes = get_marked_takes(doc) if submit_marked_takes else []
-    take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
-    camera_level, camera_message, camera_info = active_camera_info(doc)
-    add_report_row(rows, "CAMERA", camera_level, camera_message, camera_info)
-
-    document_folder = doc.GetDocumentPath()
-    document_name = get_document_name(doc)
-    if document_folder:
-        add_report_row(rows, "PROJECT", CHECK_OK, "scene saved", os.path.join(document_folder, document_name))
-    else:
-        add_report_row(rows, "PROJECT", CHECK_ERROR, "scene not saved", "Save the Cinema 4D file once before submitting")
-
-    assets, asset_error = collect_scene_assets(doc)
-    project = get_project_folder(doc)
-    if asset_error:
-        add_report_row(rows, "TEXTURES", CHECK_WARNING, "could not inspect assets", str(asset_error))
-    else:
-        missing = []
-        external = []
-        for asset in assets:
-            path = asset_text(asset, ("filename", "assetname", "name", "url", "nodePath"))
-            if not path:
-                continue
-            normalized = normalize_asset_path(path, project)
-            if not asset_exists(asset, path, project):
-                missing.append(path)
-            elif is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
-                external.append(normalized)
-        if missing:
-            add_report_row(rows, "TEXTURES", CHECK_ERROR, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0]))
-        elif external:
-            add_report_row(rows, "TEXTURES", CHECK_WARNING, "external asset paths found", "%d outside project; workers need same mapping" % len(external))
-        else:
-            add_report_row(rows, "TEXTURES", CHECK_OK, "all assets found", "%d assets checked" % len(assets))
-
-    engine_level, engine_message, engine_info = render_engine_info(doc)
-    add_report_row(rows, "RENDERENGINE", engine_level, engine_message, engine_info)
-
-    fps_level, fps_message, fps_detail = fps_info(doc)
-    add_report_row(rows, "FPS", fps_level, fps_message, fps_detail)
-
-    if take_driven:
-        output_level, output_message, output_detail = marked_take_output_check(doc, marked_takes)
-    else:
-        output_level, output_message, output_detail = output_folder_check(output)
-    add_report_row(rows, "OUTPUT", output_level, output_message, output_detail)
-
-    multipass_level, multipass_message, multipass_detail = multipass_info(doc)
-    add_report_row(rows, "MULTIPASS", multipass_level, multipass_message, multipass_detail)
-
-    format_level, format_message, format_detail = format_info(doc, output)
-    add_report_row(rows, "FORMAT", format_level, format_message, format_detail)
-
-    if take_driven:
-        add_report_row(rows, "FRAME", CHECK_OK, "marked take frame ranges", "%d takes use their own render settings" % len(marked_takes))
-    elif end < start:
-        add_report_row(rows, "FRAME", CHECK_ERROR, "invalid range", "%d-%d" % (start, end))
-    elif start == end:
-        add_report_row(rows, "FRAME", CHECK_OK, "single frame", str(start))
-    else:
-        add_report_row(rows, "FRAME", CHECK_OK, "frame range", "%d-%d" % (start, end))
-
-    resolution_level, resolution_message, resolution_detail = resolution_info(doc)
-    add_report_row(rows, "RESOLUTION", resolution_level, resolution_message, resolution_detail)
-
-    if chunk_size < 1:
-        add_report_row(rows, "BATCH", CHECK_ERROR, "invalid frames per batch", str(chunk_size))
-    else:
-        add_report_row(rows, "BATCH", CHECK_OK, "frames per batch", str(chunk_size))
-
-    if share and os.path.isdir(share):
-        writable, reason = probe_writable_folder(share)
-        if writable:
-            add_report_row(rows, "QUEUE", CHECK_OK, "DreamRender share writable", share)
-        else:
-            add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share not writable", reason)
-    elif share:
-        add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share inaccessible", share)
-    else:
-        add_report_row(rows, "QUEUE", CHECK_ERROR, "DreamRender share missing", "")
-
-    if submit_marked_takes:
-        if not marked_takes:
-            add_report_row(rows, "TAKES", CHECK_ERROR, "no marked takes found", "")
-        else:
-            labels = [take_name(take) for take in marked_takes]
-            duplicates = sorted(set(label for label in labels if labels.count(label) > 1))
-            if duplicates:
-                add_report_row(rows, "TAKES", CHECK_ERROR, "duplicate take names", ", ".join(duplicates))
-            else:
-                render_data_names = sorted(set(render_data_name(item) for item in marked_take_render_data(doc, marked_takes)))
-                if len(render_data_names) > 1:
-                    add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes, %d render settings" % (len(marked_takes), len(render_data_names)))
-                else:
-                    add_report_row(rows, "TAKES", CHECK_OK, "marked takes ready", "%d takes" % len(marked_takes))
-    else:
-        add_report_row(rows, "TAKES", CHECK_OK, "single render job", "marked takes disabled")
-
-    return rows
+    return [build_row() for _label, build_row in scene_report_step_builders(doc, share, output, start, end, chunk_size, submit_marked_takes)]
 
 
 def create_job(share, scene, output, frames, name, chunk_size, notes, metadata=None):
@@ -1011,6 +1048,9 @@ class DreamRenderDialog(gui.GeDialog):
         self.check_rows = []
         self.render_settings = []
         self.check_table = SceneCheckTableArea()
+        self.check_steps = []
+        self.check_step_index = 0
+        self.check_step_phase = ""
         start, end, frame_source = get_render_range(self.doc)
         self.start = start
         self.end = end
@@ -1077,7 +1117,7 @@ class DreamRenderDialog(gui.GeDialog):
         self.SetBool(IDC_IGNORE_WARNINGS, bool(self.config.get("ignore_warnings", False)))
         self.SetString(IDC_NOTES, self.config.get("notes", ""))
         self.update_take_mode_controls()
-        self.run_scene_check(show_dialog=False)
+        self.start_scene_check_animation()
         return True
 
     def Command(self, control_id, msg):
@@ -1093,15 +1133,15 @@ class DreamRenderDialog(gui.GeDialog):
             webbrowser.open("http://127.0.0.1:8766")
             return True
         if control_id == IDC_CHECK_SCENE:
-            self.run_scene_check(show_dialog=False)
+            self.start_scene_check_animation()
             return True
         if control_id == IDC_RENDER_SETTINGS:
             self.select_render_setting(self.GetInt32(IDC_RENDER_SETTINGS))
-            self.run_scene_check(show_dialog=False)
+            self.start_scene_check_animation()
             return True
         if control_id == IDC_MARKED_TAKES:
             self.update_take_mode_controls()
-            self.run_scene_check(show_dialog=False)
+            self.start_scene_check_animation()
             return True
         return True
 
@@ -1170,24 +1210,52 @@ class DreamRenderDialog(gui.GeDialog):
         self.check_rows = rows
         self.check_table.set_rows(rows, current_index=current_index, spinner=spinner)
 
+    def start_scene_check_animation(self):
+        self.SetTimer(0)
+        self.update_take_mode_controls()
+        share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
+        self.check_steps = scene_report_step_builders(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        self.check_step_index = 0
+        self.check_step_phase = "show"
+        self.update_check_table([])
+        self.SetString(IDC_CHECK_STATUS, "Checking scene...")
+        self.SetString(IDC_CHECK_PROGRESS, "Starting scene check")
+        self.SetTimer(95)
+
+    def Timer(self, msg):
+        if not self.check_steps or self.check_step_index >= len(self.check_steps):
+            self.SetTimer(0)
+            return
+        label, build_row = self.check_steps[self.check_step_index]
+        spinner_frames = ("◐", "◓", "◑", "◒")
+        spinner = spinner_frames[self.check_step_index % len(spinner_frames)]
+        if self.check_step_phase == "show":
+            pending_row = {"label": label, "level": None, "message": "checking...", "info": "", "text": ""}
+            self.SetString(
+                IDC_CHECK_PROGRESS,
+                "%s Checking %s (%d/%d)" % (spinner, label, self.check_step_index + 1, len(self.check_steps)),
+            )
+            self.update_check_table(self.check_rows + [pending_row], current_index=len(self.check_rows), spinner=spinner)
+            self.check_step_phase = "build"
+            return
+
+        row = build_row()
+        rows = list(self.check_rows)
+        rows.append(row)
+        self.update_check_table(rows)
+        self.check_step_index += 1
+        self.check_step_phase = "show"
+        if self.check_step_index >= len(self.check_steps):
+            self.SetTimer(0)
+            self.SetString(IDC_CHECK_PROGRESS, "Done: %d checks" % len(rows))
+            self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
+
     def run_scene_check(self, show_dialog=True):
         self.update_take_mode_controls()
         share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         rows = farm_style_scene_report(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         report = format_scene_report(rows)
-        partial_rows = []
-        spinner_frames = ("◐", "◓", "◑", "◒")
-        for index, row in enumerate(rows):
-            partial_rows.append(row)
-            spinner = spinner_frames[index % len(spinner_frames)]
-            self.SetString(IDC_CHECK_PROGRESS, "%s Checking %s (%d/%d)" % (spinner, row["label"], index + 1, len(rows)))
-            self.update_check_table(partial_rows, current_index=index, spinner=spinner)
-            try:
-                c4d.EventAdd()
-            except Exception:
-                pass
-            time.sleep(0.085)
         self.update_check_table(rows)
         self.SetString(IDC_CHECK_PROGRESS, "Done: %d checks" % len(rows))
         self.SetString(IDC_CHECK_STATUS, report_status_text(rows))
