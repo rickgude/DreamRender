@@ -9,7 +9,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Canvas, Frame, StringVar, Text, Tk, filedialog, messagebox
+from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Canvas, Frame, PhotoImage, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from .queue import (
@@ -38,6 +38,7 @@ START_COLOR = "#0e0e0d"
 STOP_COLOR = "#65cd8b"
 STOP_ALL_COLOR = "#ed7884"
 DEFAULT_BUTTON = "#f8faf8"
+IMAGE_CACHE: dict[tuple[int, int, int, str, str, str], PhotoImage] = {}
 
 
 def load_config() -> dict[str, object]:
@@ -57,6 +58,7 @@ class RoundedCard(Frame):
         self.radius = radius
         self.padding = padding
         self.fill = fill
+        self.image: PhotoImage | None = None
         self.canvas = Canvas(self, background=APP_BG, borderwidth=0, highlightthickness=0)
         self.canvas.pack(fill=BOTH, expand=True)
         self.content = ttk.Frame(self.canvas, padding=padding, style="Card.TFrame")
@@ -74,7 +76,8 @@ class RoundedCard(Frame):
         width = max(1, self.winfo_width())
         height = max(1, self.winfo_height())
         self.canvas.delete("card")
-        draw_rounded_rect(self.canvas, width, height, self.radius, self.fill, OUTLINE, "card")
+        self.image = rounded_rect_image(width, height, self.radius, self.fill, OUTLINE, APP_BG)
+        self.canvas.create_image(0, 0, anchor="nw", image=self.image, tags="card")
         self.canvas.coords(self.window_id, self.padding, self.padding)
         self.canvas.itemconfigure(
             self.window_id,
@@ -84,23 +87,92 @@ class RoundedCard(Frame):
         self.canvas.tag_lower("card")
 
 
-def draw_rounded_rect(canvas: Canvas, width: int, height: int, radius: int, fill: str, outline: str, tag: str) -> None:
-    radius = min(radius, width // 2, height // 2)
-    diameter = radius * 2
-    canvas.create_rectangle(radius, 0, width - radius, height, fill=fill, outline=fill, tags=tag)
-    canvas.create_rectangle(0, radius, width, height - radius, fill=fill, outline=fill, tags=tag)
-    canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, fill=fill, outline=fill, tags=tag)
-    canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, fill=fill, outline=fill, tags=tag)
-    canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, fill=fill, outline=fill, tags=tag)
-    canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, fill=fill, outline=fill, tags=tag)
-    canvas.create_line(radius, 0, width - radius, 0, fill=outline, tags=tag)
-    canvas.create_line(width, radius, width, height - radius, fill=outline, tags=tag)
-    canvas.create_line(width - radius, height, radius, height, fill=outline, tags=tag)
-    canvas.create_line(0, height - radius, 0, radius, fill=outline, tags=tag)
-    canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, style="arc", outline=outline, tags=tag)
-    canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, style="arc", outline=outline, tags=tag)
-    canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, style="arc", outline=outline, tags=tag)
-    canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, style="arc", outline=outline, tags=tag)
+def hex_to_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def blend(foreground: tuple[int, int, int], background: tuple[int, int, int], alpha: float) -> tuple[int, int, int]:
+    alpha = max(0.0, min(1.0, alpha))
+    return tuple(int(round(foreground[index] * alpha + background[index] * (1.0 - alpha))) for index in range(3))
+
+
+def rounded_rect_image(width: int, height: int, radius: int, fill: str, outline: str, background: str) -> PhotoImage:
+    width = max(2, int(width))
+    height = max(2, int(height))
+    radius = max(1, min(int(radius), width // 2, height // 2))
+    key = (width, height, radius, fill, outline, background)
+    cached = IMAGE_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    if len(IMAGE_CACHE) > 128:
+        IMAGE_CACHE.clear()
+
+    scale = 3
+    border = 1.0
+    fill_rgb = hex_to_rgb(fill)
+    outline_rgb = hex_to_rgb(outline)
+    background_rgb = hex_to_rgb(background)
+
+    fill_bytes = bytes(fill_rgb)
+    outline_bytes = bytes(outline_rgb)
+    data = bytearray(fill_bytes * (width * height))
+
+    def set_pixel(x: int, y: int, color: tuple[int, int, int] | bytes) -> None:
+        offset = (y * width + x) * 3
+        data[offset : offset + 3] = color
+
+    for x in range(radius, width - radius):
+        set_pixel(x, 0, outline_bytes)
+        set_pixel(x, height - 1, outline_bytes)
+    for y in range(radius, height - radius):
+        set_pixel(0, y, outline_bytes)
+        set_pixel(width - 1, y, outline_bytes)
+
+    corners = (
+        (radius - 0.5, radius - 0.5, 0, 0),
+        (width - radius - 0.5, radius - 0.5, width - radius, 0),
+        (radius - 0.5, height - radius - 0.5, 0, height - radius),
+        (width - radius - 0.5, height - radius - 0.5, width - radius, height - radius),
+    )
+    outer_radius = radius - 0.45
+    inner_radius = max(0.0, outer_radius - border)
+    total = scale * scale
+    for center_x, center_y, start_x, start_y in corners:
+        for y in range(start_y, min(start_y + radius, height)):
+            for x in range(start_x, min(start_x + radius, width)):
+                outline_samples = 0
+                fill_samples = 0
+                for sy in range(scale):
+                    py = y + (sy + 0.5) / scale
+                    for sx in range(scale):
+                        px = x + (sx + 0.5) / scale
+                        distance = ((px - center_x) ** 2 + (py - center_y) ** 2) ** 0.5
+                        if distance <= outer_radius:
+                            outline_samples += 1
+                        if distance <= inner_radius:
+                            fill_samples += 1
+                outline_alpha = outline_samples / total
+                fill_alpha = fill_samples / total
+                color = blend(outline_rgb, background_rgb, outline_alpha)
+                if fill_alpha:
+                    color = blend(fill_rgb, color, fill_alpha)
+                set_pixel(x, y, color)
+
+    if width > radius * 2 and height > 2:
+        for x in range(radius, width - radius):
+            set_pixel(x, 1, fill_bytes)
+            set_pixel(x, height - 2, fill_bytes)
+    if height > radius * 2 and width > 2:
+        for y in range(radius, height - radius):
+            set_pixel(1, y, fill_bytes)
+            set_pixel(width - 2, y, fill_bytes)
+
+    ppm = f"P6\n{width} {height}\n255\n".encode("ascii") + bytes(data)
+    image = PhotoImage(data=ppm, format="PPM")
+    IMAGE_CACHE[key] = image
+    return image
 
 
 class PillButton(Frame):
@@ -124,6 +196,7 @@ class PillButton(Frame):
         self.current_fill = fill
         self.foreground = foreground
         self.width = self.preferred_width()
+        self.image: PhotoImage | None = None
         self.canvas = Canvas(self, height=40, background=canvas_bg, borderwidth=0, highlightthickness=0)
         self.canvas.configure(width=self.width)
         self.canvas.pack(fill=BOTH, expand=True)
@@ -172,7 +245,8 @@ class PillButton(Frame):
         width = max(self.width, self.winfo_width())
         height = max(38, self.winfo_height())
         self.canvas.delete("button")
-        draw_rounded_rect(self.canvas, width, height, height // 2, self.current_fill, OUTLINE, "button")
+        self.image = rounded_rect_image(width, height, height // 2, self.current_fill, OUTLINE, str(self.canvas.cget("background")))
+        self.canvas.create_image(0, 0, anchor="nw", image=self.image, tags="button")
         self.canvas.create_text(
             width // 2,
             height // 2,
