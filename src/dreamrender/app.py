@@ -33,6 +33,11 @@ TEXT = "#0f1111"
 MUTED = "#737a7c"
 ORANGE = "#ff8b3d"
 CORAL = "#ff5538"
+OUTLINE = "#dbe5e1"
+START_COLOR = "#0e0e0d"
+STOP_COLOR = "#65cd8b"
+STOP_ALL_COLOR = "#ed7884"
+DEFAULT_BUTTON = "#f8faf8"
 
 
 def load_config() -> dict[str, object]:
@@ -68,31 +73,8 @@ class RoundedCard(Frame):
     def redraw(self, _event=None) -> None:
         width = max(1, self.winfo_width())
         height = max(1, self.winfo_height())
-        radius = min(self.radius, width // 2, height // 2)
         self.canvas.delete("card")
-        diameter = radius * 2
-        self.canvas.create_rectangle(
-            radius,
-            0,
-            width - radius,
-            height,
-            fill=self.fill,
-            outline=self.fill,
-            tags="card",
-        )
-        self.canvas.create_rectangle(
-            0,
-            radius,
-            width,
-            height - radius,
-            fill=self.fill,
-            outline=self.fill,
-            tags="card",
-        )
-        self.canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, fill=self.fill, outline=self.fill, tags="card")
-        self.canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, fill=self.fill, outline=self.fill, tags="card")
-        self.canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, fill=self.fill, outline=self.fill, tags="card")
-        self.canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, fill=self.fill, outline=self.fill, tags="card")
+        draw_rounded_rect(self.canvas, width, height, self.radius, self.fill, OUTLINE, "card")
         self.canvas.coords(self.window_id, self.padding, self.padding)
         self.canvas.itemconfigure(
             self.window_id,
@@ -100,6 +82,99 @@ class RoundedCard(Frame):
             height=max(1, height - self.padding * 2),
         )
         self.canvas.tag_lower("card")
+
+
+def draw_rounded_rect(canvas: Canvas, width: int, height: int, radius: int, fill: str, outline: str, tag: str) -> None:
+    radius = min(radius, width // 2, height // 2)
+    diameter = radius * 2
+    canvas.create_rectangle(radius, 0, width - radius, height, fill=fill, outline=fill, tags=tag)
+    canvas.create_rectangle(0, radius, width, height - radius, fill=fill, outline=fill, tags=tag)
+    canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, fill=fill, outline=fill, tags=tag)
+    canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, fill=fill, outline=fill, tags=tag)
+    canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, fill=fill, outline=fill, tags=tag)
+    canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, fill=fill, outline=fill, tags=tag)
+    canvas.create_line(radius, 0, width - radius, 0, fill=outline, tags=tag)
+    canvas.create_line(width, radius, width, height - radius, fill=outline, tags=tag)
+    canvas.create_line(width - radius, height, radius, height, fill=outline, tags=tag)
+    canvas.create_line(0, height - radius, 0, radius, fill=outline, tags=tag)
+    canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, style="arc", outline=outline, tags=tag)
+    canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, style="arc", outline=outline, tags=tag)
+    canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, style="arc", outline=outline, tags=tag)
+    canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, style="arc", outline=outline, tags=tag)
+
+
+class PillButton(Frame):
+    def __init__(
+        self,
+        parent: Frame,
+        text: str | None = None,
+        command=None,
+        textvariable: StringVar | None = None,
+        fill: str = DEFAULT_BUTTON,
+        active_fill: str | None = None,
+        foreground: str = TEXT,
+        canvas_bg: str = CARD_BG,
+    ) -> None:
+        super().__init__(parent, background=canvas_bg, borderwidth=0, highlightthickness=0)
+        self.command = command
+        self.text = text or ""
+        self.textvariable = textvariable
+        self.fill = fill
+        self.active_fill = active_fill or fill
+        self.current_fill = fill
+        self.foreground = foreground
+        self.canvas = Canvas(self, height=40, background=canvas_bg, borderwidth=0, highlightthickness=0)
+        self.canvas.pack(fill=BOTH, expand=True)
+        self.canvas.bind("<Button-1>", self.invoke)
+        self.canvas.bind("<Enter>", self.on_enter)
+        self.canvas.bind("<Leave>", self.on_leave)
+        self.canvas.bind("<Configure>", self.redraw)
+        if self.textvariable is not None:
+            self.textvariable.trace_add("write", lambda *_: self.on_text_changed())
+        self.configure(width=self.preferred_width(), height=40)
+
+    def label(self) -> str:
+        return self.textvariable.get() if self.textvariable is not None else self.text
+
+    def preferred_width(self) -> int:
+        return max(96, len(self.label()) * 8 + 34)
+
+    def on_text_changed(self) -> None:
+        self.configure(width=self.preferred_width())
+        self.redraw()
+
+    def on_enter(self, _event=None) -> None:
+        self.current_fill = self.active_fill
+        self.redraw()
+
+    def on_leave(self, _event=None) -> None:
+        self.current_fill = self.fill
+        self.redraw()
+
+    def set_colors(self, fill: str, foreground: str, active_fill: str | None = None) -> None:
+        self.fill = fill
+        self.active_fill = active_fill or fill
+        self.current_fill = fill
+        self.foreground = foreground
+        self.redraw()
+
+    def invoke(self, _event=None) -> None:
+        if self.command:
+            self.command()
+
+    def redraw(self, _event=None) -> None:
+        width = max(self.preferred_width(), self.winfo_width())
+        height = max(38, self.winfo_height())
+        self.canvas.delete("button")
+        draw_rounded_rect(self.canvas, width, height, height // 2, self.current_fill, OUTLINE, "button")
+        self.canvas.create_text(
+            width // 2,
+            height // 2,
+            text=self.label(),
+            fill=self.foreground,
+            font=("Segoe UI", 10, "bold"),
+            tags="button",
+        )
 
 
 class DreamRenderApp:
@@ -149,8 +224,17 @@ class DreamRenderApp:
             text="Small-studio render farm control for Cinema 4D, Redshift, and Octane.",
             style="Subtle.TLabel",
         ).pack(anchor="w", pady=(2, 0))
-        ttk.Button(header, text="Open Dashboard", command=self.open_dashboard, style="Ghost.TButton").pack(side=RIGHT, padx=(8, 0))
-        ttk.Button(header, textvariable=self.start_button_text, command=self.toggle_dreamrender, style="Accent.TButton").pack(side=RIGHT)
+        self.pill_button(header, text="Open Dashboard", command=self.open_dashboard, canvas_bg=APP_BG).pack(side=RIGHT, padx=(8, 0))
+        self.start_button = self.pill_button(
+            header,
+            textvariable=self.start_button_text,
+            command=self.toggle_dreamrender,
+            fill=START_COLOR,
+            active_fill="#2a2d2d",
+            foreground="#ffffff",
+            canvas_bg=APP_BG,
+        )
+        self.start_button.pack(side=RIGHT)
 
         states = ttk.Frame(outer, style="App.TFrame")
         states.pack(fill=X, pady=(0, 14))
@@ -190,7 +274,17 @@ class DreamRenderApp:
         for index, (label, command, style_name) in enumerate(controls):
             row = index // 2
             column = index % 2
-            ttk.Button(controls_grid, text=label, command=command, style=style_name).grid(
+            fill = STOP_ALL_COLOR if style_name == "Danger.TButton" else DEFAULT_BUTTON
+            foreground = "#ffffff" if style_name == "Danger.TButton" else TEXT
+            active_fill = "#f08d97" if style_name == "Danger.TButton" else PANEL_BG
+            self.pill_button(
+                controls_grid,
+                text=label,
+                command=command,
+                fill=fill,
+                active_fill=active_fill,
+                foreground=foreground,
+            ).grid(
                 row=row,
                 column=column,
                 sticky="ew",
@@ -275,6 +369,28 @@ class DreamRenderApp:
         style.configure("Danger.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background=coral, foreground="#ffffff", borderwidth=0, relief="flat", bordercolor=coral)
         style.map("Danger.TButton", background=[("active", orange)], foreground=[("active", "#ffffff")])
 
+    def pill_button(
+        self,
+        parent: Frame,
+        text: str | None = None,
+        command=None,
+        textvariable: StringVar | None = None,
+        fill: str = DEFAULT_BUTTON,
+        active_fill: str | None = None,
+        foreground: str = TEXT,
+        canvas_bg: str = CARD_BG,
+    ) -> PillButton:
+        return PillButton(
+            parent,
+            text=text,
+            command=command,
+            textvariable=textvariable,
+            fill=fill,
+            active_fill=active_fill,
+            foreground=foreground,
+            canvas_bg=canvas_bg,
+        )
+
     def card(self, parent: Frame, title: str, actions=None) -> RoundedCard:
         wrapper = RoundedCard(parent, radius=28, padding=18, fill=CARD_BG)
         body = wrapper.content
@@ -282,7 +398,7 @@ class DreamRenderApp:
         header.pack(fill=X, pady=(0, 12))
         ttk.Label(header, text=title.upper(), style="CardTitle.TLabel").pack(side=LEFT)
         for label, command in actions or ():
-            ttk.Button(header, text=label, command=command, style="App.TButton").pack(side=RIGHT)
+            self.pill_button(header, text=label, command=command).pack(side=RIGHT)
         return wrapper
 
     def card_content(self, parent: Frame) -> Frame:
@@ -303,7 +419,7 @@ class DreamRenderApp:
         field = ttk.Frame(row, style="Card.TFrame")
         field.pack(fill=X, pady=(3, 0))
         ttk.Entry(field, textvariable=variable, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
-        ttk.Button(field, text="Browse", command=command, style="App.TButton").pack(side=RIGHT)
+        self.pill_button(field, text="Browse", command=command).pack(side=RIGHT)
 
     def entry_row(self, parent: Frame, label: str, variable: StringVar) -> None:
         parent = self.card_content(parent)
@@ -320,7 +436,7 @@ class DreamRenderApp:
         field = ttk.Frame(row, style="Card.TFrame")
         field.pack(fill=X, pady=(3, 0))
         ttk.Entry(field, textvariable=self.worker_id, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
-        ttk.Button(field, text="Use Computer Name", command=self.use_computer_name, style="App.TButton").pack(side=RIGHT)
+        self.pill_button(field, text="Use Computer Name", command=self.use_computer_name).pack(side=RIGHT)
 
     def use_computer_name(self) -> None:
         self.worker_id.set(socket.gethostname())
@@ -577,8 +693,10 @@ class DreamRenderApp:
     def update_start_button(self) -> None:
         if self.worker_is_running():
             self.start_button_text.set("Stop DreamRender")
+            self.start_button.set_colors(STOP_COLOR, TEXT, "#74d898")
         else:
             self.start_button_text.set("Start DreamRender")
+            self.start_button.set_colors(START_COLOR, "#ffffff", "#2a2d2d")
 
     def process_exists(self, pid: int) -> bool:
         if os.name == "nt":
