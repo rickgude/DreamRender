@@ -17,6 +17,7 @@ from tkinter import ttk
 from .queue import (
     CODE_SIGNATURE,
     Share,
+    clear_worker_restart_request,
     clear_worker_stop_request,
     doctor_share,
     queue_snapshot,
@@ -686,7 +687,9 @@ class DreamRenderApp:
             else:
                 messagebox.showerror("DreamRender", f"Cinema 4D Commandline.exe was not found:\n{c4d}")
             return
-        clear_worker_stop_request(Share(share), self.worker_id.get())
+        worker_share = Share(share)
+        clear_worker_restart_request(worker_share, self.worker_id.get())
+        clear_worker_stop_request(worker_share, self.worker_id.get())
         self.quit_after_batch.set(False)
         command = self.python_command() + [
             "worker",
@@ -740,7 +743,9 @@ class DreamRenderApp:
 
     def stop_worker(self) -> None:
         self.worker_should_run = False
-        clear_worker_stop_request(Share(Path(self.share.get())), self.worker_id.get())
+        worker_share = Share(Path(self.share.get()))
+        clear_worker_restart_request(worker_share, self.worker_id.get())
+        clear_worker_stop_request(worker_share, self.worker_id.get())
         self.quit_after_batch.set(False)
         if self.worker_process and self.worker_process.poll() is None:
             self.stop_process_tree(self.worker_process)
@@ -762,6 +767,7 @@ class DreamRenderApp:
             self.status.set("Worker will quit after the current batch")
             self.add_log("Quit-after-batch requested")
         else:
+            clear_worker_restart_request(share, worker_id)
             clear_worker_stop_request(share, worker_id)
             self.status.set("Quit-after-batch cancelled")
             self.add_log("Quit-after-batch cancelled")
@@ -1070,6 +1076,9 @@ class DreamRenderApp:
                 exit_code = self.worker_process.returncode
                 self.worker_process = None
                 self.worker_state.set("Worker: stopped")
+                if exit_code == 76:
+                    self.worker_should_run = False
+                    self.quit_after_batch.set(False)
                 self.update_start_button()
                 self.status.set(f"Worker exited with code {exit_code}")
                 self.add_log(f"Worker exited with code {exit_code}")
@@ -1129,7 +1138,9 @@ class DreamRenderApp:
     def close(self) -> None:
         self.persist()
         self.worker_should_run = False
-        clear_worker_stop_request(Share(Path(self.share.get())), self.worker_id.get())
+        worker_share = Share(Path(self.share.get()))
+        clear_worker_restart_request(worker_share, self.worker_id.get())
+        clear_worker_stop_request(worker_share, self.worker_id.get())
         if self.worker_process and self.worker_process.poll() is None:
             self.stop_process_tree(self.worker_process)
         elif self.adopted_worker_pid is not None and self.process_exists(self.adopted_worker_pid):

@@ -9,7 +9,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .queue import Share, find_frame_preview, get_job_detail, queue_snapshot, read_frame_log, repair_queue, requeue_failed, requeue_frames, set_job_priorities, set_job_status
+from .queue import (
+    Share,
+    find_frame_preview,
+    get_job_detail,
+    queue_snapshot,
+    read_frame_log,
+    repair_queue,
+    request_worker_restart,
+    request_worker_stop_after_batch,
+    requeue_failed,
+    requeue_frames,
+    set_job_priorities,
+    set_job_status,
+)
 
 
 HTML = r"""<!doctype html>
@@ -83,8 +96,15 @@ HTML = r"""<!doctype html>
       border: 0; background: var(--worker-color, var(--panel)); border-radius: 20px; box-shadow: var(--soft-shadow);
       color: var(--ink);
     }
+    .worker-body { min-width: 0; flex: 1; }
     .worker > div:first-of-type { font-weight: 800; }
     .worker .subtle, .worker-card .subtle { color: rgba(14,14,13,.72); font-weight: 650; }
+    .worker-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .worker-actions button {
+      height: 27px; padding: 0 10px; font-size: 11px;
+      border-color: rgba(255,255,255,.45); background: rgba(255,255,255,.72);
+      box-shadow: 0 2px 6px rgba(18,22,22,.08);
+    }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
     .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .dot.heartbeat-lost { background: var(--rendering); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
@@ -231,6 +251,7 @@ HTML = r"""<!doctype html>
           <span class="legend-item"><span class="legend-swatch rendering"></span>Rendering</span>
           <span class="legend-item"><span class="legend-swatch failed"></span>Error</span>
           <span class="legend-item"><span class="legend-swatch queued"></span>Queued</span>
+          <button onclick="workerAction('worker_restart_outdated')">Restart Outdated Workers</button>
           <button onclick="repairQueue()">Repair Queue</button>
         </div>
       </div>
@@ -346,6 +367,12 @@ HTML = r"""<!doctype html>
       await refresh();
       if (selectedJobId) await openDetail(selectedJobId, selectedFrame);
     }
+    async function workerAction(kind, workerId = "") {
+      const body = new URLSearchParams({ action: kind });
+      if (workerId) body.set("worker_id", workerId);
+      await fetch("/api/action", { method: "POST", body });
+      await refresh();
+    }
     function frameClass(status) {
       return `frame ${status || "queued"}`;
     }
@@ -375,6 +402,14 @@ HTML = r"""<!doctype html>
       if (worker.state === "heartbeat_lost") return `heartbeat lost while rendering${code}`;
       if (worker.last_seen_seconds == null) return "offline";
       return `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago${code}`;
+    }
+    function workerActions(worker) {
+      const id = JSON.stringify(worker.worker_id);
+      const restartLabel = worker.code_current ? "Restart" : "Restart Needed";
+      return `<div class="worker-actions">
+        <button title="Ask this worker to stop after its current batch, then let the app restart it." onclick="workerAction('worker_restart', ${id})">${restartLabel}</button>
+        <button title="Ask this worker to stop after its current batch." onclick="workerAction('worker_stop', ${id})">Stop After Batch</button>
+      </div>`;
     }
     function jobStatusLabel(job) {
       if (job.visible_because_active && job.status === "archived") return "finishing current batch";
@@ -603,9 +638,10 @@ HTML = r"""<!doctype html>
       document.getElementById("workers").innerHTML = data.workers.length ? data.workers.map(w => `
         <div class="worker" style="--worker-color:${workerColor(w.worker_id)}">
           <span class="dot ${w.state === "online" ? "online" : ""} ${w.state === "heartbeat_lost" ? "heartbeat-lost" : ""}" style="--worker-color:${workerColor(w.worker_id)}"></span>
-          <div>
+          <div class="worker-body">
             <div>${esc(w.worker_id)}</div>
             <div class="subtle">${esc(workerLabel(w))}</div>
+            ${workerActions(w)}
           </div>
         </div>`).join("") : `<div class="subtle">No workers have checked in yet.</div>`;
       const grouped = groupJobs(data.jobs);
@@ -678,6 +714,27 @@ class MonitorHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         values = parse_qs(self.rfile.read(length).decode("utf-8"))
         action = values.get("action", [""])[0]
+        if action in {"worker_restart", "worker_stop"}:
+            worker_id = values.get("worker_id", [""])[0]
+            if not worker_id:
+                self.send_error(HTTPStatus.BAD_REQUEST, "Missing worker_id")
+                return
+            if action == "worker_restart":
+                request_worker_restart(self.share, worker_id)
+            else:
+                request_worker_stop_after_batch(self.share, worker_id)
+            self.send_json({"ok": True})
+            return
+        if action == "worker_restart_outdated":
+            snapshot = queue_snapshot(self.share)
+            restarted = []
+            for worker in snapshot.get("workers", []):
+                worker_id = str(worker.get("worker_id") or "")
+                if worker_id and not worker.get("code_current"):
+                    request_worker_restart(self.share, worker_id)
+                    restarted.append(worker_id)
+            self.send_json({"ok": True, "workers": restarted})
+            return
         if action == "reorder":
             job_ids = values.get("job_ids", [])
             if not job_ids:

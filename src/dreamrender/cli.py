@@ -11,6 +11,7 @@ from .queue import (
     Share,
     ShareAccessError,
     claim_next_frames,
+    clear_worker_restart_request,
     clear_worker_stop_request,
     doctor_share,
     heartbeat_worker,
@@ -23,6 +24,7 @@ from .queue import (
     submit_job,
     summarize_job,
     worker_stop_requested,
+    worker_restart_requested,
 )
 
 
@@ -114,9 +116,11 @@ def cmd_worker(args: argparse.Namespace) -> int:
         print(f"DreamRender worker '{worker_id}' watching {share.root}", flush=True)
         while True:
             if worker_stop_requested(share, worker_id):
-                print("Quit-after-batch requested. Worker is stopping before claiming new frames.", flush=True)
+                restarting = worker_restart_requested(share, worker_id)
+                print(("Restart requested." if restarting else "Quit-after-batch requested.") + " Worker is stopping before claiming new frames.", flush=True)
+                clear_worker_restart_request(share, worker_id)
                 clear_worker_stop_request(share, worker_id)
-                return 0
+                return 75 if restarting else 76
             heartbeat_worker(share, worker_id)
             claim = claim_next_frames(share, worker_id, args.stale_seconds, args.chunk_size)
             if claim is None:
@@ -142,9 +146,11 @@ def cmd_worker(args: argparse.Namespace) -> int:
                 heartbeat_interval=args.heartbeat_seconds,
             )
             if worker_stop_requested(share, worker_id):
-                print("Quit-after-batch requested. Worker stopped after finishing the current batch.", flush=True)
+                restarting = worker_restart_requested(share, worker_id)
+                print(("Restart requested." if restarting else "Quit-after-batch requested.") + " Worker stopped after finishing the current batch.", flush=True)
+                clear_worker_restart_request(share, worker_id)
                 clear_worker_stop_request(share, worker_id)
-                return 0
+                return 75 if restarting else 76
             if args.once:
                 return 0
     except ShareAccessError as exc:
