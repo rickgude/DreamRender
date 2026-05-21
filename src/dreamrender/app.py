@@ -418,13 +418,20 @@ class DreamRenderApp:
         )
         self.start_button.pack(side=RIGHT)
 
-        states = ttk.Frame(outer, style="App.TFrame")
-        states.pack(fill=X, pady=(0, 14))
-        self.status_card(states, "Worker", self.worker_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
-        self.status_card(states, "Monitor", self.monitor_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
+        tabs = ttk.Notebook(outer, style="App.TNotebook")
+        tabs.pack(fill=BOTH, expand=True)
+        setup_tab = ttk.Frame(tabs, padding=(0, 18, 0, 0), style="App.TFrame")
+        activity_tab = ttk.Frame(tabs, padding=(0, 18, 0, 0), style="App.TFrame")
+        tabs.add(setup_tab, text="Setup")
+        tabs.add(activity_tab, text="Activity")
+
+        states = ttk.Frame(setup_tab, style="App.TFrame")
+        states.pack(fill=X, pady=(0, 18))
+        self.status_card(states, "Worker", self.worker_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 12))
+        self.status_card(states, "Monitor", self.monitor_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 12))
         self.status_card(states, "Status", self.status).pack(side=LEFT, fill=X, expand=True)
 
-        content = ttk.Frame(outer, style="App.TFrame")
+        content = ttk.Frame(setup_tab, style="App.TFrame")
         content.pack(fill=BOTH, expand=True)
         content.columnconfigure(0, minsize=500, weight=0)
         content.columnconfigure(1, weight=1)
@@ -488,8 +495,8 @@ class DreamRenderApp:
                 padx=(0, 8) if column == 0 else (0, 0),
                 pady=(0, 8) if row < 1 else (0, 0),
             )
-        controls_grid.columnconfigure(0, weight=0)
-        controls_grid.columnconfigure(1, weight=0)
+        controls_grid.columnconfigure(0, weight=1)
+        controls_grid.columnconfigure(1, weight=1)
 
         health_card = self.card(right, "Health")
         health_card.pack(fill=X, pady=(0, 14))
@@ -503,13 +510,16 @@ class DreamRenderApp:
         self.summary.pack(anchor="w", fill=X)
         self.summary.bind("<Configure>", lambda event: self.summary.configure(wraplength=max(320, event.width - 8)))
 
-        gpu_card = self.card(right, "GPU Activity")
-        gpu_card.pack(fill=X, pady=(0, 14))
+        activity_tab.columnconfigure(0, weight=1)
+        activity_tab.rowconfigure(1, weight=1)
+
+        gpu_card = self.card(activity_tab, "GPU Activity")
+        gpu_card.grid(row=0, column=0, sticky="ew", pady=(0, 18))
         self.gpu_graph = GpuActivityGraph(self.card_content(gpu_card))
         self.gpu_graph.pack(fill=X, expand=True)
 
-        log_card = self.card(right, "Worker Log", actions=(("Copy Log", self.copy_log),))
-        log_card.pack(fill=BOTH, expand=True)
+        log_card = self.card(activity_tab, "Worker Log", actions=(("Copy Log", self.copy_log),))
+        log_card.grid(row=1, column=0, sticky="nsew")
         log_body = self.card_content(log_card)
         log_frame = ttk.Frame(log_body, style="Card.TFrame")
         log_frame.pack(fill=BOTH, expand=True)
@@ -549,6 +559,20 @@ class DreamRenderApp:
         coral = CORAL
         style.configure("App.TFrame", background=bg)
         style.configure("Card.TFrame", background=card, relief="flat", borderwidth=0)
+        style.configure("App.TNotebook", background=bg, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        style.configure(
+            "App.TNotebook.Tab",
+            background=DEFAULT_BUTTON,
+            foreground=text,
+            borderwidth=0,
+            padding=(24, 10),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "App.TNotebook.Tab",
+            background=[("selected", START_COLOR), ("active", PANEL_BG)],
+            foreground=[("selected", "#ffffff"), ("active", text)],
+        )
         style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 25, "bold"))
         style.configure("Subtle.TLabel", background=bg, foreground=muted, font=("Segoe UI", 10))
         style.configure("CardTitle.TLabel", background=card, foreground=muted, font=("Segoe UI", 9, "bold"))
