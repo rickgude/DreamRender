@@ -263,10 +263,10 @@ def detect_render_engine(doc):
         pass
     info = ", ".join(names) if names else "engine id %s" % engine
     lowered = info.lower()
-    if "redshift" in lowered or str(engine) in ("1036219", "1036220"):
-        return "Redshift", info
     if "octane" in lowered:
         return "Octane", info
+    if "redshift" in lowered or str(engine) in ("1036219", "1036220"):
+        return "Redshift", info
     return "", info
 
 
@@ -919,6 +919,12 @@ def output_folder_check(output):
     return CHECK_WARNING, "path has no folder", output
 
 
+def output_path_info_check(output, source):
+    if source == "fallback":
+        return CHECK_ERROR, "no render settings output path", "Set the save/output path in Cinema 4D Render Settings"
+    return output_folder_check(output)
+
+
 def worst_level(levels):
     if CHECK_ERROR in levels:
         return CHECK_ERROR
@@ -932,8 +938,8 @@ def marked_take_output_check(doc, marked_takes):
     details = []
     for take in marked_takes:
         render_data = get_take_render_data(doc, take)
-        output, _source = get_output_path_info_for_render_data(doc, render_data)
-        level, message, detail = output_folder_check(output)
+        output, source = get_output_path_info_for_render_data(doc, render_data)
+        level, message, detail = output_path_info_check(output, source)
         levels.append(level)
         if level != CHECK_OK:
             details.append("%s: %s" % (take_name(take), detail or message))
@@ -998,7 +1004,7 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
         if take_driven:
             level, message, info = marked_take_output_check(doc, marked_takes)
         else:
-            level, message, info = output_folder_check(output)
+            level, message, info = output_path_info_check(output, get_output_path_info(doc)[1])
         return {"label": "OUTPUT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
 
     def multipass_row():
@@ -1258,7 +1264,7 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
         level, message, detail = marked_take_output_check(doc, marked_takes)
         add_check(checks, level, message, detail)
     elif output:
-        level, message, detail = output_folder_check(output)
+        level, message, detail = output_path_info_check(output, get_output_path_info(doc)[1])
         add_check(checks, level, message, detail)
     else:
         add_check(checks, CHECK_ERROR, "Output path is empty", "Set an output path in Cinema 4D Render Settings.")

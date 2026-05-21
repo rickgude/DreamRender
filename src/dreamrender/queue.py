@@ -467,11 +467,15 @@ def render_frames(
         log_path = job_dir / "logs" / f"{start_frame:04d}-{end_frame:04d}-{worker_id}.log"
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"[{utc_now()}] Scene path is not available on this worker: {scene_path}\n")
+        print(f"Job {job['id']} frame(s) {start_frame}-{end_frame}: scene path is not available on this worker", flush=True)
+        print(f"Log: {log_path}", flush=True)
         complete_frames(frame_paths, worker_id, 2, log_path)
         return 2
 
     command = build_command(command_template, c4d, job, job_dir, start_frame, end_frame, worker_id)
     log_path = job_dir / "logs" / f"{start_frame:04d}-{end_frame:04d}-{worker_id}.log"
+    print(f"Launching Cinema 4D for job {job['id']} frame(s) {start_frame}-{end_frame}", flush=True)
+    print(f"Log: {log_path}", flush=True)
 
     process = subprocess.Popen(
         command,
@@ -536,6 +540,7 @@ def render_frames(
         return_code = -9 if cancelled else process.wait()
         log.write(f"[{utc_now()}] Exit code: {return_code}\n")
 
+    print(f"Finished job {job['id']} frame(s) {start_frame}-{end_frame} with exit code {return_code}", flush=True)
     complete_frames(frame_paths, worker_id, return_code, log_path)
     return return_code
 

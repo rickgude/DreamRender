@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_init_share(args: argparse.Namespace) -> int:
     share = Share(args.share)
     share.init()
-    print(f"Initialized DreamRender share: {share.root}")
+    print(f"Initialized DreamRender share: {share.root}", flush=True)
     return 0
 
 
@@ -92,7 +92,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
         name=args.name,
         copy_scene=args.copy_scene,
     )
-    print(f"Submitted job {job_id} with {len(frames)} frame(s).")
+    print(f"Submitted job {job_id} with {len(frames)} frame(s).", flush=True)
     return 0
 
 
@@ -100,17 +100,17 @@ def cmd_worker(args: argparse.Namespace) -> int:
     share = Share(args.share)
     worker_id = args.worker_id
     if not args.c4d.exists():
-        print(f"Cinema 4D commandline executable not found: {args.c4d}", file=sys.stderr)
+        print(f"Cinema 4D commandline executable not found: {args.c4d}", file=sys.stderr, flush=True)
         return 2
 
     try:
-        print(f"DreamRender worker '{worker_id}' watching {share.root}")
+        print(f"DreamRender worker '{worker_id}' watching {share.root}", flush=True)
         while True:
             heartbeat_worker(share, worker_id)
             claim = claim_next_frames(share, worker_id, args.stale_seconds, args.chunk_size)
             if claim is None:
                 if args.once:
-                    print("No queued frames found.")
+                    print("No queued frames found.", flush=True)
                     return 0
                 time.sleep(args.poll_seconds)
                 continue
@@ -119,7 +119,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
             start_frame = int(frame_paths[0].stem)
             end_frame = int(frame_paths[-1].stem)
             frame_label = str(start_frame) if start_frame == end_frame else f"{start_frame}-{end_frame}"
-            print(f"Rendering job {job['id']} frame(s) {frame_label}")
+            print(f"Rendering job {job['id']} frame(s) {frame_label}", flush=True)
             render_frames(
                 share=share,
                 c4d=args.c4d,
@@ -133,8 +133,8 @@ def cmd_worker(args: argparse.Namespace) -> int:
             if args.once:
                 return 0
     except ShareAccessError as exc:
-        print(str(exc), file=sys.stderr)
-        print("Run: dreamrender doctor --share <same-share-path>", file=sys.stderr)
+        print(str(exc), file=sys.stderr, flush=True)
+        print("Run: dreamrender doctor --share <same-share-path>", file=sys.stderr, flush=True)
         return 3
 
 
@@ -142,23 +142,23 @@ def cmd_status(args: argparse.Namespace) -> int:
     share = Share(args.share)
     jobs = list_jobs(share)
     if not jobs:
-        print("No jobs found.")
+        print("No jobs found.", flush=True)
     for job_dir in jobs:
         summary = summarize_job(job_dir)
         counts = ", ".join(f"{key}: {value}" for key, value in sorted(summary["counts"].items()))
-        print(f"{summary['id']}  {summary['name']}  {summary['progress']:.1f}%  {counts}")
+        print(f"{summary['id']}  {summary['name']}  {summary['progress']:.1f}%  {counts}", flush=True)
 
     workers = sorted(share.workers_dir.glob("*.json")) if share.workers_dir.exists() else []
     if workers:
-        print("\nWorkers:")
+        print("\nWorkers:", flush=True)
         for worker in workers:
-            print(f"- {worker.stem}")
+            print(f"- {worker.stem}", flush=True)
     return 0
 
 
 def cmd_requeue_failed(args: argparse.Namespace) -> int:
     changed = requeue_failed(Share(args.share), args.job_id)
-    print(f"Requeued {changed} failed frame(s).")
+    print(f"Requeued {changed} failed frame(s).", flush=True)
     return 0
 
 
@@ -171,7 +171,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 def cmd_set_job_status(args: argparse.Namespace) -> int:
     set_job_status(Share(args.share), args.job_id, args.status)
-    print(f"Set job {args.job_id} to {args.status}.")
+    print(f"Set job {args.job_id} to {args.status}.", flush=True)
     return 0
 
 
@@ -179,7 +179,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     failed = False
     for label, ok, detail in doctor_share(Share(args.share)):
         mark = "OK" if ok else "FAIL"
-        print(f"{mark:4} {label}  {detail}")
+        print(f"{mark:4} {label}  {detail}", flush=True)
         failed = failed or not ok
     return 1 if failed else 0
 
