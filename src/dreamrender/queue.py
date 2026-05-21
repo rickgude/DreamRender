@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from json import JSONDecodeError
 import os
@@ -21,6 +22,12 @@ OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{
 BROWSER_PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 CONVERTIBLE_PREVIEW_EXTENSIONS = {".exr", ".tif", ".tiff"}
 IMAGE_EXTENSIONS = BROWSER_PREVIEW_EXTENSIONS | CONVERTIBLE_PREVIEW_EXTENSIONS
+CODE_SIGNATURE = hashlib.sha1(
+    "|".join(
+        f"{path.name}:{path.stat().st_mtime_ns}:{path.stat().st_size}"
+        for path in sorted(Path(__file__).parent.glob("*.py"))
+    ).encode("utf-8")
+).hexdigest()[:10]
 
 
 class ShareAccessError(RuntimeError):
@@ -419,6 +426,7 @@ def heartbeat_worker(share: Share, worker_id: str, active: dict[str, Any] | None
             "worker_id": worker_id,
             "host": socket.gethostname(),
             "heartbeat_at": utc_now(),
+            "code_signature": CODE_SIGNATURE,
             "active": active,
         },
     )

@@ -353,15 +353,16 @@ HTML = r"""<!doctype html>
       return `job ${esc(active.job_id)}, frame ${esc(active.frame)}`;
     }
     function workerLabel(worker) {
+      const code = worker.code_signature ? ` · code ${worker.code_signature}` : " · old worker";
       if (worker.active) {
         const suffix = ["archived", "draining"].includes(worker.active_job_status) ? " (finishing current batch)" : "";
-        if (worker.state === "heartbeat_lost") return `heartbeat lost, ${activeLabel(worker.active)}`;
-        return `${activeLabel(worker.active)}${suffix}`;
+        if (worker.state === "heartbeat_lost") return `heartbeat lost, ${activeLabel(worker.active)}${code}`;
+        return `${activeLabel(worker.active)}${suffix}${code}`;
       }
-      if (worker.state === "online") return "idle";
-      if (worker.state === "heartbeat_lost") return "heartbeat lost while rendering";
+      if (worker.state === "online") return `idle${code}`;
+      if (worker.state === "heartbeat_lost") return `heartbeat lost while rendering${code}`;
       if (worker.last_seen_seconds == null) return "offline";
-      return `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
+      return `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago${code}`;
     }
     function jobStatusLabel(job) {
       if (job.visible_because_active && job.status === "archived") return "finishing current batch";

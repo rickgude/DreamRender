@@ -657,6 +657,7 @@ class DreamRenderApp:
 
     def start_all(self) -> None:
         self.init_queue(silent=True)
+        self.stop_monitors_for_share(log=True)
         self.start_monitor(open_browser=False)
         self.start_worker()
 
@@ -861,6 +862,53 @@ class DreamRenderApp:
             except OSError:
                 pass
 
+    def dreamrender_processes(self) -> list[dict[str, object]]:
+        if os.name != "nt":
+            return []
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine -like '*dreamrender*' } | "
+            "Select-Object -Property ProcessId,CommandLine | ConvertTo-Json -Depth 3",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+            if result.returncode != 0 or not result.stdout.strip():
+                return []
+            payload = json.loads(result.stdout)
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else [payload]
+        return [row for row in rows if isinstance(row, dict)]
+
+    def monitor_pids_for_share(self) -> list[int]:
+        share = self.share.get()
+        pids: list[int] = []
+        for row in self.dreamrender_processes():
+            command_line = str(row.get("CommandLine", ""))
+            normalized = " ".join(command_line.lower().split())
+            if "-m dreamrender monitor" not in normalized:
+                continue
+            if "--share" not in command_line or share not in command_line:
+                continue
+            try:
+                pid = int(row["ProcessId"])
+            except Exception:
+                continue
+            if pid != os.getpid():
+                pids.append(pid)
+        return pids
+
+    def stop_monitors_for_share(self, log: bool = False) -> None:
+        pids = self.monitor_pids_for_share()
+        for pid in pids:
+            self.stop_pid_tree(pid)
+        self.monitor_process = None
+        if pids and log:
+            self.add_log(f"Stopped {len(pids)} existing monitor process(es) for this queue")
+
     def worker_is_running(self) -> bool:
         if self.worker_process and self.worker_process.poll() is None:
             return True
@@ -999,6 +1047,7 @@ class DreamRenderApp:
         self.stop_worker()
         if self.monitor_process and self.monitor_process.poll() is None:
             self.stop_process_tree(self.monitor_process)
+        self.stop_monitors_for_share(log=True)
         self.monitor_process = None
         self.monitor_state.set("Monitor: stopped")
         self.status.set("DreamRender stopped")
@@ -1068,6 +1117,7 @@ class DreamRenderApp:
             self.stop_pid_tree(self.adopted_worker_pid)
         if self.monitor_process and self.monitor_process.poll() is None:
             self.stop_process_tree(self.monitor_process)
+        self.stop_monitors_for_share()
         self.root.destroy()
 
     def run(self) -> None:
