@@ -39,6 +39,6 @@ if not errorlevel 1 (
   )
 )
 
-echo Could not find regular Python. Install Python 3.10+ from python.org or create .venv in the DreamRender folder.
-echo Do not use Cinema 4D c4dpy.exe for DreamRender workers; it can crash outside Cinema 4D on some machines.
+echo Could not find regular Python. Install Python 3.10+ from python.org.
+echo Do not use Cinema 4D c4dpy.exe for DreamRender workers.
 exit /b 1

@@ -55,7 +55,7 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Day-To-Day Workflow
 
-1. Start `scripts\start-dreamrender-app.bat`.
+1. Start `scripts\START_DreamRender_App.bat`.
 2. In the app, choose the DreamRender share folder.
 3. Click `Start DreamRender` on every machine that should render.
 4. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
@@ -64,12 +64,22 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 7. Confirm `Save` when DreamRender asks to save the scene.
 8. Watch the dashboard.
 
+## Which Script Should I Use?
+
+Use `START_DreamRender_App.bat` for normal work. It is the main control panel
+and can start the worker, monitor, dashboard, queue setup, diagnostics, and
+desktop shortcut from one place.
+
+Use `ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run
+without the app, usually for troubleshooting or a simple headless node. The
+window must stay open while it renders.
+
 ## Cinema 4D Plugin
 
 Install the plugin with:
 
 ```bat
-scripts\install-c4d-plugin-2026.bat
+scripts\INSTALL_Cinema4D_Plugin_2026.bat
 ```
 
 Restart Cinema 4D 2026 after installing. The command appears as:
@@ -125,25 +135,25 @@ or automation.
 Run the app:
 
 ```bat
-scripts\start-dreamrender-app.bat
+scripts\START_DreamRender_App.bat
 ```
 
 Run a worker:
 
 ```bat
-scripts\start-worker-c4d2026.bat "\\RenderServer\DreamRender"
+scripts\ADVANCED_Worker_Only_C4D2026.bat "\\RenderServer\DreamRender"
 ```
 
 Run the monitor:
 
 ```bat
-scripts\start-monitor.bat "\\RenderServer\DreamRender"
+scripts\ADVANCED_Monitor_Only.bat "\\RenderServer\DreamRender"
 ```
 
 Check queue status:
 
 ```bat
-scripts\dreamrender.bat status --share "\\RenderServer\DreamRender"
+scripts\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
 ```
 
 ## Development Install

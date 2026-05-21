@@ -35,8 +35,9 @@ class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
-        self.root.geometry("780x520")
-        self.root.minsize(720, 480)
+        self.root.geometry("940x680")
+        self.root.minsize(860, 620)
+        self.root.configure(bg="#edf3ef")
 
         config = load_config()
         self.share = StringVar(value=str(config.get("share", DEFAULT_SHARE)))
@@ -56,78 +57,139 @@ class DreamRenderApp:
         self.worker_should_run = False
         self.worker_restart_after = 0.0
 
+        self.configure_style()
         self.build_ui()
         self.adopt_existing_worker()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(1000, self.refresh_status)
 
     def build_ui(self) -> None:
-        outer = ttk.Frame(self.root, padding=18)
+        outer = ttk.Frame(self.root, padding=22, style="App.TFrame")
         outer.pack(fill=BOTH, expand=True)
 
-        title = ttk.Label(outer, text="DreamRender Control", font=("Segoe UI", 18, "bold"))
-        title.pack(anchor="w")
-        ttk.Label(outer, text="Start this machine as a render node, open the dashboard, and keep the queue healthy.").pack(anchor="w", pady=(2, 16))
+        header = ttk.Frame(outer, style="App.TFrame")
+        header.pack(fill=X, pady=(0, 16))
+        title_area = ttk.Frame(header, style="App.TFrame")
+        title_area.pack(side=LEFT, fill=X, expand=True)
+        ttk.Label(title_area, text="DreamRender", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            title_area,
+            text="Small-studio render farm control for Cinema 4D, Redshift, and Octane.",
+            style="Subtle.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
+        ttk.Button(header, text="Open Dashboard", command=self.open_dashboard, style="Ghost.TButton").pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(header, textvariable=self.start_button_text, command=self.start_all, style="Accent.TButton").pack(side=RIGHT)
 
-        form = ttk.Frame(outer)
-        form.pack(fill=X)
-        self.path_row(form, "Queue", self.share, self.pick_share)
-        self.path_row(form, "Cinema 4D", self.c4d, self.pick_c4d)
-        self.worker_row(form)
-        self.entry_row(form, "Chunk size", self.chunk_size)
-        self.entry_row(form, "Monitor port", self.monitor_port)
-        ttk.Checkbutton(form, text="Keep worker running", variable=self.keep_worker_running, command=self.persist).pack(anchor="w", pady=(4, 0))
+        states = ttk.Frame(outer, style="App.TFrame")
+        states.pack(fill=X, pady=(0, 14))
+        self.status_card(states, "Worker", self.worker_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
+        self.status_card(states, "Monitor", self.monitor_state).pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
+        self.status_card(states, "Status", self.status).pack(side=LEFT, fill=X, expand=True)
 
-        buttons = ttk.Frame(outer)
-        buttons.pack(fill=X, pady=14)
-        ttk.Button(buttons, textvariable=self.start_button_text, command=self.start_all).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(buttons, text="Start Worker", command=self.start_worker).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(buttons, text="Stop Worker", command=self.stop_worker).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(buttons, text="Start Monitor", command=self.start_monitor).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(buttons, text="Open Dashboard", command=self.open_dashboard).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(buttons, text="Doctor", command=self.run_doctor).pack(side=RIGHT)
+        content = ttk.Frame(outer, style="App.TFrame")
+        content.pack(fill=BOTH, expand=True)
 
-        tools = ttk.Frame(outer)
-        tools.pack(fill=X, pady=(0, 10))
-        ttk.Button(tools, text="Initialize Queue", command=self.init_queue).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(tools, text="Open Queue Folder", command=self.open_queue_folder).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(tools, text="Create Desktop Shortcut", command=self.create_desktop_shortcut).pack(side=LEFT, padx=(0, 8))
-        ttk.Button(tools, text="Stop All", command=self.stop_all).pack(side=RIGHT)
+        left = ttk.Frame(content, style="App.TFrame")
+        left.pack(side=LEFT, fill=BOTH, expand=False, padx=(0, 14))
+        right = ttk.Frame(content, style="App.TFrame")
+        right.pack(side=LEFT, fill=BOTH, expand=True)
 
-        ttk.Separator(outer).pack(fill=X, pady=10)
-        states = ttk.Frame(outer)
-        states.pack(fill=X, pady=(0, 8))
-        ttk.Label(states, textvariable=self.worker_state, font=("Segoe UI", 10, "bold")).pack(side=LEFT, padx=(0, 18))
-        ttk.Label(states, textvariable=self.monitor_state, font=("Segoe UI", 10, "bold")).pack(side=LEFT)
-        ttk.Label(outer, textvariable=self.status, font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        setup = self.card(left, "Setup")
+        setup.pack(fill=X, pady=(0, 14))
+        self.path_row(setup, "Queue", self.share, self.pick_share)
+        self.path_row(setup, "Cinema 4D", self.c4d, self.pick_c4d)
+        self.worker_row(setup)
+        self.entry_row(setup, "Chunk size", self.chunk_size)
+        self.entry_row(setup, "Monitor port", self.monitor_port)
+        ttk.Checkbutton(setup, text="Keep worker running", variable=self.keep_worker_running, command=self.persist, style="App.TCheckbutton").pack(anchor="w", pady=(8, 0))
 
-        self.summary = ttk.Label(outer, text="", justify=LEFT)
+        actions = self.card(left, "Controls")
+        actions.pack(fill=X)
+        ttk.Button(actions, text="Start Worker", command=self.start_worker, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Stop Worker", command=self.stop_worker, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Start Monitor", command=self.start_monitor, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Initialize Queue", command=self.init_queue, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Open Queue Folder", command=self.open_queue_folder, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Create Desktop Shortcut", command=self.create_desktop_shortcut, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Doctor", command=self.run_doctor, style="App.TButton").pack(fill=X, pady=(0, 8))
+        ttk.Button(actions, text="Stop All", command=self.stop_all, style="Danger.TButton").pack(fill=X)
+
+        queue_card = self.card(right, "Queue")
+        queue_card.pack(fill=X, pady=(0, 14))
+        self.summary = ttk.Label(queue_card, text="", justify=LEFT, style="Body.TLabel")
         self.summary.pack(anchor="w", fill=X)
 
-        self.log = ttk.Treeview(outer, columns=("message",), show="headings", height=10)
+        log_card = self.card(right, "Worker Log")
+        log_card.pack(fill=BOTH, expand=True)
+        self.log = ttk.Treeview(log_card, columns=("message",), show="headings", height=14, style="App.Treeview")
         self.log.heading("message", text="Worker log")
         self.log.column("message", anchor="w")
-        self.log.pack(fill=BOTH, expand=True, pady=(12, 0))
+        self.log.pack(fill=BOTH, expand=True)
+
+    def configure_style(self) -> None:
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        bg = "#edf3ef"
+        card = "#fbfdfb"
+        text = "#0f1111"
+        muted = "#66736f"
+        line = "#dce5df"
+        accent = "#0f1111"
+        style.configure("App.TFrame", background=bg)
+        style.configure("Card.TFrame", background=card, relief="flat")
+        style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 24, "bold"))
+        style.configure("Subtle.TLabel", background=bg, foreground=muted, font=("Segoe UI", 10))
+        style.configure("CardTitle.TLabel", background=card, foreground=text, font=("Segoe UI", 12, "bold"))
+        style.configure("Body.TLabel", background=card, foreground=text, font=("Segoe UI", 10))
+        style.configure("Muted.TLabel", background=card, foreground=muted, font=("Segoe UI", 9))
+        style.configure("StatusValue.TLabel", background=card, foreground=text, font=("Segoe UI", 11, "bold"))
+        style.configure("App.TEntry", fieldbackground="#f4f7f5", foreground=text, bordercolor=line, lightcolor=line, darkcolor=line, padding=6)
+        style.configure("App.TCheckbutton", background=card, foreground=text, font=("Segoe UI", 10))
+        style.configure("App.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#f4f7f5", foreground=text, bordercolor=line)
+        style.configure("Ghost.TButton", padding=(14, 9), font=("Segoe UI", 10, "bold"), background="#f7faf8", foreground=text, bordercolor=line)
+        style.configure("Accent.TButton", padding=(16, 10), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
+        style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
+        style.configure("Danger.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#ffe7df", foreground="#9a2c18", bordercolor="#ffc7b8")
+        style.configure("App.Treeview", background="#f6faf7", fieldbackground="#f6faf7", foreground=text, rowheight=24, bordercolor=line)
+        style.configure("App.Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#eef4f0", foreground=text)
+
+    def card(self, parent: Frame, title: str) -> ttk.Frame:
+        wrapper = ttk.Frame(parent, padding=16, style="Card.TFrame")
+        ttk.Label(wrapper, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 12))
+        return wrapper
+
+    def status_card(self, parent: Frame, title: str, variable: StringVar) -> ttk.Frame:
+        wrapper = ttk.Frame(parent, padding=14, style="Card.TFrame")
+        ttk.Label(wrapper, text=title.upper(), style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(wrapper, textvariable=variable, style="StatusValue.TLabel").pack(anchor="w", pady=(4, 0))
+        return wrapper
 
     def path_row(self, parent: Frame, label: str, variable: StringVar, command) -> None:
-        row = ttk.Frame(parent)
-        row.pack(fill=X, pady=4)
-        ttk.Label(row, text=label, width=12).pack(side=LEFT)
-        ttk.Entry(row, textvariable=variable).pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
-        ttk.Button(row, text="Browse", command=command).pack(side=RIGHT)
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill=X, pady=(0, 8))
+        ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
+        field = ttk.Frame(row, style="Card.TFrame")
+        field.pack(fill=X, pady=(3, 0))
+        ttk.Entry(field, textvariable=variable, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
+        ttk.Button(field, text="Browse", command=command, style="App.TButton").pack(side=RIGHT)
 
     def entry_row(self, parent: Frame, label: str, variable: StringVar) -> None:
-        row = ttk.Frame(parent)
-        row.pack(fill=X, pady=4)
-        ttk.Label(row, text=label, width=12).pack(side=LEFT)
-        ttk.Entry(row, textvariable=variable).pack(side=LEFT, fill=X, expand=True)
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill=X, pady=(0, 8))
+        ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
+        ttk.Entry(row, textvariable=variable, style="App.TEntry").pack(fill=X, pady=(3, 0))
 
     def worker_row(self, parent: Frame) -> None:
-        row = ttk.Frame(parent)
-        row.pack(fill=X, pady=4)
-        ttk.Label(row, text="Worker", width=12).pack(side=LEFT)
-        ttk.Entry(row, textvariable=self.worker_id).pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
-        ttk.Button(row, text="Use Computer Name", command=self.use_computer_name).pack(side=RIGHT)
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill=X, pady=(0, 8))
+        ttk.Label(row, text="Worker", style="Muted.TLabel").pack(anchor="w")
+        field = ttk.Frame(row, style="Card.TFrame")
+        field.pack(fill=X, pady=(3, 0))
+        ttk.Entry(field, textvariable=self.worker_id, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
+        ttk.Button(field, text="Use Computer Name", command=self.use_computer_name, style="App.TButton").pack(side=RIGHT)
 
     def use_computer_name(self) -> None:
         self.worker_id.set(socket.gethostname())
@@ -302,7 +364,7 @@ class DreamRenderApp:
         if os.name != "nt":
             messagebox.showinfo("DreamRender", "Desktop shortcut creation is currently Windows-only.")
             return
-        launcher = Path(__file__).resolve().parents[2] / "scripts" / "start-dreamrender-app.bat"
+        launcher = Path(__file__).resolve().parents[2] / "scripts" / "START_DreamRender_App.bat"
         desktop = Path.home() / "Desktop" / "DreamRender.lnk"
         script = (
             "$shell = New-Object -ComObject WScript.Shell; "
