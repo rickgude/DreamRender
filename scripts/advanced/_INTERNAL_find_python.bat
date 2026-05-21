@@ -1,7 +1,7 @@
 @echo off
 
-if exist "%~dp0..\.venv\Scripts\python.exe" (
-  set "DREAMRENDER_PYTHON_EXE=%~dp0..\.venv\Scripts\python.exe"
+if exist "%~dp0..\..\.venv\Scripts\python.exe" (
+  set "DREAMRENDER_PYTHON_EXE=%~dp0..\..\.venv\Scripts\python.exe"
   set "DREAMRENDER_PYTHON_ARGS="
   exit /b 0
 )

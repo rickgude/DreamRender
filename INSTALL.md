@@ -38,7 +38,7 @@ for the worker.
 Quick check:
 
 ```bat
-scripts\ADVANCED_Command_Line.bat --help
+scripts\advanced\ADVANCED_Command_Line.bat --help
 ```
 
 If this opens DreamRender help, Python is ready.
@@ -80,9 +80,10 @@ In the app:
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
-Use the app for normal work. Only use `ADVANCED_Worker_Only_C4D2026.bat` when
-you deliberately want a plain worker console without the app. That advanced
-worker window must stay open while rendering.
+Use the app for normal work. Only use
+`scripts\advanced\ADVANCED_Worker_Only_C4D2026.bat` when you deliberately want a
+plain worker console without the app. That advanced worker window must stay open
+while rendering.
 
 ## 5. Install The Cinema 4D Plugin
 
@@ -172,7 +173,7 @@ scripts\START_DreamRender_App.bat
 or:
 
 ```bat
-scripts\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
 ```
 
 ### Python is not found

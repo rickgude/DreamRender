@@ -70,7 +70,8 @@ Use `START_DreamRender_App.bat` for normal work. It is the main control panel
 and can start the worker, monitor, dashboard, queue setup, diagnostics, and
 desktop shortcut from one place.
 
-Use `ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run
+Advanced scripts live in `scripts\advanced`. Use
+`ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run
 without the app, usually for troubleshooting or a simple headless node. The
 window must stay open while it renders.
 
@@ -141,19 +142,19 @@ scripts\START_DreamRender_App.bat
 Run a worker:
 
 ```bat
-scripts\ADVANCED_Worker_Only_C4D2026.bat "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Worker_Only_C4D2026.bat "\\RenderServer\DreamRender"
 ```
 
 Run the monitor:
 
 ```bat
-scripts\ADVANCED_Monitor_Only.bat "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Monitor_Only.bat "\\RenderServer\DreamRender"
 ```
 
 Check queue status:
 
 ```bat
-scripts\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
 ```
 
 ## Development Install

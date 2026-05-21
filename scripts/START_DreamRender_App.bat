@@ -1,7 +1,7 @@
 @echo off
 setlocal
 set "ROOT=%~dp0.."
-call "%~dp0_INTERNAL_find_python.bat"
+call "%~dp0advanced\_INTERNAL_find_python.bat"
 if errorlevel 1 (
   pause
   exit /b 1

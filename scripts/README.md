@@ -32,6 +32,9 @@ Extensions > DreamRender Submit Render
 
 ## Advanced / Troubleshooting
 
+Advanced scripts are tucked away in `advanced\` so most users only see the two
+scripts they need.
+
 ### `ADVANCED_Worker_Only_C4D2026.bat`
 
 Use only when you want a render node to run as a plain console worker without
@@ -53,9 +56,10 @@ Use only for manual commands and troubleshooting.
 Example:
 
 ```bat
-ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
 ```
 
 ### `_INTERNAL_find_python.bat`
 
-Internal helper used by the other scripts. Do not run this directly.
+Internal helper in `advanced\`, used by the other scripts. Do not run this
+directly.
