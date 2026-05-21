@@ -119,7 +119,7 @@ class DreamRenderApp:
         self.summary = ttk.Label(queue_card, text="", justify=LEFT, style="Body.TLabel")
         self.summary.pack(anchor="w", fill=X)
 
-        log_card = self.card(right, "Worker Log")
+        log_card = self.card(right, "Worker Log", actions=(("Copy Log", self.copy_log),))
         log_card.pack(fill=BOTH, expand=True)
         log_frame = ttk.Frame(log_card, style="Card.TFrame")
         log_frame.pack(fill=BOTH, expand=True)
@@ -171,9 +171,13 @@ class DreamRenderApp:
         style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
         style.configure("Danger.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#ffe7df", foreground="#9a2c18", bordercolor="#ffc7b8")
 
-    def card(self, parent: Frame, title: str) -> ttk.Frame:
+    def card(self, parent: Frame, title: str, actions=None) -> ttk.Frame:
         wrapper = ttk.Frame(parent, padding=16, style="Card.TFrame")
-        ttk.Label(wrapper, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 12))
+        header = ttk.Frame(wrapper, style="Card.TFrame")
+        header.pack(fill=X, pady=(0, 12))
+        ttk.Label(header, text=title, style="CardTitle.TLabel").pack(side=LEFT)
+        for label, command in actions or ():
+            ttk.Button(header, text=label, command=command, style="App.TButton").pack(side=RIGHT)
         return wrapper
 
     def status_card(self, parent: Frame, title: str, variable: StringVar) -> ttk.Frame:
@@ -309,6 +313,12 @@ class DreamRenderApp:
             self.log.delete("1.0", "%d.0" % (lines - 1000))
         self.log.see(END)
         self.log.configure(state="disabled")
+
+    def copy_log(self) -> None:
+        text = self.log.get("1.0", "end-1c")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status.set("Worker log copied to clipboard")
 
     def stop_worker(self) -> None:
         self.worker_should_run = False
