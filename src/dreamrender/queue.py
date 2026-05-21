@@ -17,6 +17,7 @@ from typing import Any
 
 
 DEFAULT_COMMAND_TEMPLATE = '"{c4d}" -render "{scene}" {take_arg} -frame {start_frame} {end_frame}'
+OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{g_startupPath}}/plugins" -render "{scene}" {take_arg} -frame {start_frame} {end_frame} 1'
 BROWSER_PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 CONVERTIBLE_PREVIEW_EXTENSIONS = {".exr", ".tif", ".tiff"}
 IMAGE_EXTENSIONS = BROWSER_PREVIEW_EXTENSIONS | CONVERTIBLE_PREVIEW_EXTENSIONS
@@ -412,7 +413,13 @@ def build_command(
     end_frame: int,
     worker_id: str,
 ) -> str:
-    take_name = str(job.get("metadata", {}).get("take_name") or "")
+    metadata = job.get("metadata", {})
+    if (
+        template == DEFAULT_COMMAND_TEMPLATE
+        and str(metadata.get("render_engine", "")).lower() == "octane"
+    ):
+        template = OCTANE_COMMAND_TEMPLATE
+    take_name = str(metadata.get("take_name") or "")
     take_arg = f'-take "{take_name}"' if take_name else ""
     return template.format(
         c4d=str(c4d),

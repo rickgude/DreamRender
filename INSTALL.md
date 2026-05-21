@@ -1,6 +1,6 @@
 # Install DreamRender
 
-This is the simple setup path for Cinema 4D 2026 + Redshift.
+This is the simple setup path for Cinema 4D 2026 with Redshift or Octane.
 
 You only need three things:
 
@@ -226,7 +226,7 @@ After pulling or downloading a newer version:
 ## What DreamRender Does Not Do Yet
 
 - It does not collect every texture/cache/proxy into a package.
-- It does not install Cinema 4D, Redshift, fonts, OCIO, or plugins.
+- It does not install Cinema 4D, Redshift, Octane, fonts, OCIO, or plugins.
 - It does not solve license issues.
 - It does not make different drive mappings magically equivalent.
 

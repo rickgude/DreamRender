@@ -249,6 +249,27 @@ def render_data_value(data, parameter_id, fallback=None):
         return fallback
 
 
+def detect_render_engine(doc):
+    render_data = doc.GetActiveRenderData()
+    data = render_data.GetData()
+    engine = render_data_value(data, c4d.RDATA_RENDERENGINE, "")
+    names = []
+    try:
+        video_post = render_data.GetFirstVideoPost()
+        while video_post:
+            names.append(video_post.GetName() or str(video_post.GetType()))
+            video_post = video_post.GetNext()
+    except Exception:
+        pass
+    info = ", ".join(names) if names else "engine id %s" % engine
+    lowered = info.lower()
+    if "redshift" in lowered or str(engine) in ("1036219", "1036220"):
+        return "Redshift", info
+    if "octane" in lowered:
+        return "Octane", info
+    return "", info
+
+
 def active_camera_info(doc):
     try:
         base_draw = doc.GetActiveBaseDraw()
@@ -269,21 +290,10 @@ def active_camera_info(doc):
 
 
 def render_engine_info(doc):
-    render_data = doc.GetActiveRenderData()
-    data = render_data.GetData()
-    engine = render_data_value(data, c4d.RDATA_RENDERENGINE, "")
-    names = []
-    try:
-        video_post = render_data.GetFirstVideoPost()
-        while video_post:
-            names.append(video_post.GetName() or str(video_post.GetType()))
-            video_post = video_post.GetNext()
-    except Exception:
-        pass
-    info = ", ".join(names) if names else "engine id %s" % engine
-    if "redshift" in info.lower() or str(engine) in ("1036219", "1036220"):
-        return CHECK_OK, "Redshift renderer detected", info
-    return CHECK_WARNING, "DreamRender is intended for Redshift renders", info
+    renderer, info = detect_render_engine(doc)
+    if renderer:
+        return CHECK_OK, "%s renderer detected" % renderer, info
+    return CHECK_WARNING, "unsupported renderer detected", info
 
 
 def fps_info(doc):
@@ -1511,6 +1521,7 @@ class DreamRenderDialog(gui.GeDialog):
         share, name, output, start, end, chunk_size, submit_marked_takes, notes, ignore_warnings = self.collect_submit_values()
         output_source = get_output_path_info(self.doc)[1]
         frame_source = self.frame_source
+        render_engine, render_engine_info_text = detect_render_engine(self.doc)
         chunk_size = max(1, self.GetInt32(IDC_CHUNK_SIZE))
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
         if has_check_level(checks, CHECK_ERROR):
@@ -1588,6 +1599,8 @@ class DreamRenderDialog(gui.GeDialog):
                                 "document_name": get_document_name(self.doc),
                                 "output_source": output_source,
                                 "frame_source": take_frame_source,
+                                "render_engine": render_engine,
+                                "render_engine_info": render_engine_info_text,
                             },
                         )
                     )
@@ -1606,6 +1619,8 @@ class DreamRenderDialog(gui.GeDialog):
                             "document_name": get_document_name(self.doc),
                             "output_source": output_source,
                             "frame_source": frame_source,
+                            "render_engine": render_engine,
+                            "render_engine_info": render_engine_info_text,
                         },
                     )
                 ]

@@ -1,9 +1,9 @@
 # DreamRender
 
-DreamRender is lightweight render farm software for small Cinema 4D 2026 +
-Redshift setups. It is built for artists who have a few powerful machines at
-home or in a small studio and want any available machine to pick up frames
-automatically.
+DreamRender is lightweight render farm software for small Cinema 4D 2026 setups
+using Redshift or Octane. It is built for artists who have a few powerful
+machines at home or in a small studio and want any available machine to pick up
+frames automatically.
 
 It follows a Deadline-style render manager workflow, but keeps the architecture
 simple: every machine points to the same DreamRender share, and workers join or
@@ -83,12 +83,22 @@ The submitter reads the active Cinema 4D Render Settings for:
 - frame range
 - output path
 - output format
-- Redshift/multipass settings
+- Redshift, Octane, and multipass settings
 - marked takes and take-specific render settings
 
 DreamRender saves the current scene, then creates a separate job-scene copy in a
 `DreamRenderJobs` folder near the project. Workers render that copy, while output
 still goes to the path set in Cinema 4D Render Settings.
+
+## Renderer Support
+
+DreamRender supports Cinema 4D command-line rendering for Redshift and Octane.
+The render engine must be installed and licensed on every worker machine.
+
+For Octane jobs submitted from the Cinema 4D plugin, DreamRender stores the
+detected renderer in the job metadata. Workers then use Octane's recommended
+Cinema 4D command-line module path pattern so the C4D Octane plugin can load in
+background renders.
 
 ## Dashboard
 
@@ -151,16 +161,16 @@ scripts set `PYTHONPATH` to the local `src` folder.
 
 DreamRender is released under the MIT License. See [LICENSE](LICENSE).
 
-Cinema 4D, Redshift, and Maxon product names belong to their respective owners.
-DreamRender does not include Cinema 4D, Redshift, plugins, render licenses, or
-third-party assets.
+Cinema 4D, Redshift, Octane, Maxon, and OTOY product names belong to their
+respective owners. DreamRender does not include Cinema 4D, Redshift, Octane,
+plugins, render licenses, or third-party assets.
 
 ## Notes
 
 - Use regular Python 3.10 or newer from python.org. Do not use Cinema 4D
   `c4dpy.exe` for the worker.
-- Keep Cinema 4D, Redshift, plugins, OCIO, fonts, caches, and assets consistent
-  across machines.
-- Redshift licensing must allow command-line rendering on each worker.
+- Keep Cinema 4D, Redshift/Octane, plugins, OCIO, fonts, caches, and assets
+  consistent across machines.
+- Renderer licensing must allow command-line rendering on each worker.
 - Map project folders identically on every machine for the most predictable
   output and asset behavior.
