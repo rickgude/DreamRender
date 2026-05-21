@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "DreamRender",
+  "version": "0.1.2",
+  "identifier": "com.dreamrender.app",
+  "build": {
+    "frontendDist": "../src/dreamrender/app_v2_static",
+    "devUrl": "http://127.0.0.1:8777"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DreamRender",
+        "width": 1280,
+        "height": 920,
+        "minWidth": 1060,
+        "minHeight": 760,
+        "resizable": true,
+        "fullscreen": false,
+        "url": "http://127.0.0.1:8777"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Small-studio render farm control for Cinema 4D.",
+    "longDescription": "DreamRender is lightweight render farm software for Cinema 4D, Redshift, and Octane.",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

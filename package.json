@@ -1,0 +1,14 @@
+{
+  "name": "dreamrender-desktop",
+  "version": "0.1.2",
+  "private": true,
+  "description": "DreamRender desktop shell.",
+  "scripts": {
+    "app:v2": "python -m dreamrender app-v2",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

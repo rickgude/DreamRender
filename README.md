@@ -16,7 +16,8 @@ New install? Follow the artist-friendly guide:
 **[Install DreamRender](INSTALL.md)**
 
 DreamRender is moving to a cleaner App v2 interface. See
-**[DreamRender App v2](APP_V2.md)** for the UI migration path.
+**[DreamRender App v2](APP_V2.md)** for the UI migration path and Tauri desktop
+shell notes.
 
 That guide covers:
 

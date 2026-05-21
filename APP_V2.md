@@ -31,14 +31,33 @@ For development:
 scripts\advanced\ADVANCED_Command_Line.bat app-v2
 ```
 
-## Next Tauri Step
+## Tauri Desktop Shell
 
-The next packaging step is to wrap the App v2 URL in Tauri:
+The repository now includes a Tauri shell in `src-tauri`.
 
-1. Start `dreamrender app-v2 --no-browser` as the backend sidecar.
-2. Open `http://127.0.0.1:8777/` inside the Tauri webview.
-3. Package Python and the DreamRender source with the app.
-4. Keep the command-line tools available only for advanced troubleshooting.
+For development:
 
-This keeps the proven backend intact while replacing the artist-facing UI with a
-proper desktop shell.
+```bat
+npm install
+npm run tauri:dev
+```
+
+This requires Node.js and Rust/Cargo. If `cargo --version` does not work, install
+Rust from rustup before running the Tauri commands.
+
+The Tauri shell starts:
+
+```text
+python -m dreamrender app-v2 --no-browser
+```
+
+Then it opens the App v2 interface in a native desktop window.
+
+## Packaging Notes
+
+The current shell is ready for local development. For a public installer, the
+next step is to bundle Python/DreamRender as a Tauri sidecar so users do not need
+to install Python manually.
+
+Until that packaging step is done, users still need regular Python 3.10+ on each
+machine.
