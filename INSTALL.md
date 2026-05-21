@@ -72,10 +72,8 @@ scripts\START_DreamRender_App.bat
 In the app:
 
 1. Choose the DreamRender share folder.
-2. Click `Initialize Share` if it is a new queue folder.
-3. Click `Start Monitor`.
-4. Click `Open Dashboard`.
-5. Click `Start DreamRender` on every machine that should render.
+2. Click `Start DreamRender` on every machine that should render.
+3. Click `Open Dashboard` when you want to watch the farm.
 
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.

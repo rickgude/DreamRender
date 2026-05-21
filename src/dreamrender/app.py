@@ -108,13 +108,10 @@ class DreamRenderApp:
         controls_grid = ttk.Frame(actions, style="Card.TFrame")
         controls_grid.pack(fill=X)
         controls = (
-            ("Start Worker", self.start_worker, "App.TButton"),
-            ("Stop Worker", self.stop_worker, "App.TButton"),
             ("Start Monitor", self.start_monitor, "App.TButton"),
-            ("Initialize Queue", self.init_queue, "App.TButton"),
             ("Open Queue Folder", self.open_queue_folder, "App.TButton"),
             ("Desktop Shortcut", self.create_desktop_shortcut, "App.TButton"),
-            ("Doctor", self.run_doctor, "App.TButton"),
+            ("Run Diagnostics", self.run_doctor, "App.TButton"),
             ("Stop All", self.stop_all, "Danger.TButton"),
         )
         for index, (label, command, style_name) in enumerate(controls):
@@ -125,7 +122,7 @@ class DreamRenderApp:
                 column=column,
                 sticky="ew",
                 padx=(0, 8) if column == 0 else (0, 0),
-                pady=(0, 8) if row < 3 else (0, 0),
+                pady=(0, 8) if row < 1 else (0, 0),
             )
         controls_grid.columnconfigure(0, weight=1)
         controls_grid.columnconfigure(1, weight=1)
@@ -388,7 +385,7 @@ class DreamRenderApp:
     def run_doctor(self) -> None:
         results = doctor_share(Share(Path(self.share.get())))
         message = "\n".join(f"{'OK' if ok else 'FAIL'}  {label}: {detail}" for label, ok, detail in results)
-        messagebox.showinfo("DreamRender Doctor", message)
+        messagebox.showinfo("DreamRender Diagnostics", message)
 
     def init_queue(self, silent: bool = False) -> None:
         share = Share(Path(self.share.get()))
