@@ -35,8 +35,8 @@ class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
-        self.root.geometry("940x680")
-        self.root.minsize(860, 620)
+        self.root.geometry("980x820")
+        self.root.minsize(900, 760)
         self.root.configure(bg="#edf3ef")
 
         config = load_config()
@@ -78,7 +78,7 @@ class DreamRenderApp:
             style="Subtle.TLabel",
         ).pack(anchor="w", pady=(2, 0))
         ttk.Button(header, text="Open Dashboard", command=self.open_dashboard, style="Ghost.TButton").pack(side=RIGHT, padx=(8, 0))
-        ttk.Button(header, textvariable=self.start_button_text, command=self.start_all, style="Accent.TButton").pack(side=RIGHT)
+        ttk.Button(header, textvariable=self.start_button_text, command=self.toggle_dreamrender, style="Accent.TButton").pack(side=RIGHT)
 
         states = ttk.Frame(outer, style="App.TFrame")
         states.pack(fill=X, pady=(0, 14))
@@ -242,6 +242,12 @@ class DreamRenderApp:
     def python_command(self) -> list[str]:
         return [sys.executable, "-m", "dreamrender"]
 
+    def toggle_dreamrender(self) -> None:
+        if self.worker_is_running() or self.monitor_is_running():
+            self.stop_all()
+        else:
+            self.start_all()
+
     def start_all(self) -> None:
         self.init_queue(silent=True)
         self.start_monitor(open_browser=False)
@@ -293,7 +299,7 @@ class DreamRenderApp:
         self.adopted_worker_pid = None
         self.status.set("Worker restarted" if auto_restart else "Worker started")
         self.worker_state.set(f"Worker: running as {self.worker_id.get()}")
-        self.start_button_text.set("DreamRender Running")
+        self.update_start_button()
         threading.Thread(target=self.read_worker_log, args=(self.worker_process,), daemon=True).start()
 
     def read_worker_log(self, process: subprocess.Popen[str]) -> None:
@@ -330,7 +336,7 @@ class DreamRenderApp:
         self.worker_process = None
         self.adopted_worker_pid = None
         self.worker_state.set("Worker: stopped")
-        self.start_button_text.set("Start DreamRender")
+        self.update_start_button()
 
     def start_monitor(self, open_browser: bool = True) -> None:
         if self.monitor_process and self.monitor_process.poll() is None:
@@ -341,6 +347,7 @@ class DreamRenderApp:
         try:
             if self.monitor_is_reachable():
                 self.monitor_state.set(f"Monitor: running on port {self.monitor_port.get()}")
+                self.update_start_button()
                 if open_browser:
                     self.open_dashboard()
                 return
@@ -353,6 +360,7 @@ class DreamRenderApp:
             )
             time.sleep(0.5)
             self.monitor_state.set(f"Monitor: running on port {self.monitor_port.get()}")
+            self.update_start_button()
             if open_browser:
                 self.open_dashboard()
         except Exception as exc:
@@ -437,6 +445,17 @@ class DreamRenderApp:
         self.adopted_worker_pid = None
         return False
 
+    def monitor_is_running(self) -> bool:
+        if self.monitor_process and self.monitor_process.poll() is None:
+            return True
+        return self.monitor_is_reachable()
+
+    def update_start_button(self) -> None:
+        if self.worker_is_running() or self.monitor_is_running():
+            self.start_button_text.set("Stop DreamRender")
+        else:
+            self.start_button_text.set("Start DreamRender")
+
     def process_exists(self, pid: int) -> bool:
         if os.name == "nt":
             result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True)
@@ -491,7 +510,7 @@ class DreamRenderApp:
         self.adopted_worker_pid = pid
         self.worker_should_run = True
         self.worker_state.set(f"Worker: running as {self.worker_id.get()} (adopted)")
-        self.start_button_text.set("DreamRender Running")
+        self.update_start_button()
         self.status.set(f"Adopted existing worker process {pid}")
         self.add_log(f"Adopted existing worker process {pid}")
 
@@ -503,6 +522,7 @@ class DreamRenderApp:
         self.monitor_process = None
         self.monitor_state.set("Monitor: stopped")
         self.status.set("DreamRender stopped")
+        self.update_start_button()
 
     def refresh_status(self) -> None:
         try:
@@ -510,7 +530,7 @@ class DreamRenderApp:
                 exit_code = self.worker_process.returncode
                 self.worker_process = None
                 self.worker_state.set("Worker: stopped")
-                self.start_button_text.set("Start DreamRender")
+                self.update_start_button()
                 self.status.set(f"Worker exited with code {exit_code}")
                 self.add_log(f"Worker exited with code {exit_code}")
                 self.worker_restart_after = time.time() + 3
@@ -518,7 +538,7 @@ class DreamRenderApp:
                 self.add_log(f"Adopted worker process {self.adopted_worker_pid} exited")
                 self.adopted_worker_pid = None
                 self.worker_state.set("Worker: stopped")
-                self.start_button_text.set("Start DreamRender")
+                self.update_start_button()
                 self.worker_restart_after = time.time() + 3
             elif self.adopted_worker_pid is None and self.worker_process is None:
                 self.adopt_existing_worker()
@@ -534,6 +554,7 @@ class DreamRenderApp:
                 self.monitor_state.set("Monitor: stopped")
             elif self.monitor_is_reachable():
                 self.monitor_state.set(f"Monitor: running on port {self.monitor_port.get()}")
+            self.update_start_button()
             snapshot = queue_snapshot(Share(Path(self.share.get())))
             jobs = snapshot["jobs"]
             workers = snapshot["workers"]
