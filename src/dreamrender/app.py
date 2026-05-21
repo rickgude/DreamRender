@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import threading
 import time
 import webbrowser
+from collections import deque
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Canvas, Frame, PhotoImage, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import ttk
@@ -39,6 +41,11 @@ STOP_COLOR = "#65cd8b"
 STOP_ALL_COLOR = "#ed7884"
 DEFAULT_BUTTON = "#f8faf8"
 IMAGE_CACHE: dict[tuple[int, int, int, str, str, str], PhotoImage] = {}
+GPU_GREEN = "#65cd8b"
+GPU_PURPLE = "#8b63f6"
+GPU_ORANGE = "#ff7359"
+GPU_YELLOW = "#ffd63f"
+GPU_COLORS = (GPU_GREEN, GPU_PURPLE, GPU_ORANGE, GPU_YELLOW)
 
 
 def load_config() -> dict[str, object]:
@@ -257,6 +264,87 @@ class PillButton(Frame):
         )
 
 
+class GpuActivityGraph(Canvas):
+    def __init__(self, parent: Frame) -> None:
+        super().__init__(parent, height=170, background=CARD_BG, borderwidth=0, highlightthickness=0)
+        self.samples: dict[int, deque[int]] = {}
+        self.gpus: list[dict[str, object]] = []
+        self.message = "Waiting for GPU data..."
+        self.bind("<Configure>", lambda _event=None: self.redraw())
+
+    def update_gpus(self, gpus: list[dict[str, object]], message: str | None = None) -> None:
+        self.gpus = gpus
+        self.message = message or ""
+        for gpu in gpus:
+            index = int(gpu["index"])
+            history = self.samples.setdefault(index, deque(maxlen=90))
+            history.append(int(gpu["util"]))
+        self.redraw()
+
+    def redraw(self) -> None:
+        self.delete("all")
+        width = max(280, self.winfo_width())
+        if not self.gpus:
+            self.create_text(
+                0,
+                22,
+                anchor="w",
+                text=self.message or "No GPU data available.",
+                fill=MUTED,
+                font=("Segoe UI", 10),
+            )
+            return
+
+        row_height = 78
+        gap = 14
+        needed_height = len(self.gpus) * row_height + max(0, len(self.gpus) - 1) * gap
+        self.configure(height=needed_height)
+        for row, gpu in enumerate(self.gpus):
+            top = row * (row_height + gap)
+            self.draw_gpu(row, gpu, 0, top, width, row_height)
+
+    def draw_gpu(self, row: int, gpu: dict[str, object], x: int, y: int, width: int, height: int) -> None:
+        color = GPU_COLORS[row % len(GPU_COLORS)]
+        util = int(gpu["util"])
+        mem_used = int(gpu["memory_used"])
+        mem_total = max(1, int(gpu["memory_total"]))
+        label = f"GPU {gpu['index']}  {gpu['name']}"
+        stats = f"{util}% load  ·  {mem_used}/{mem_total} MB VRAM"
+        self.create_text(x, y, anchor="nw", text=label, fill=TEXT, font=("Segoe UI", 10, "bold"))
+        self.create_text(width - 4, y, anchor="ne", text=stats, fill=MUTED, font=("Segoe UI", 9))
+
+        graph_top = y + 26
+        graph_height = height - 28
+        graph_width = max(80, width - 2)
+        self.create_rectangle(
+            x,
+            graph_top,
+            x + graph_width,
+            graph_top + graph_height,
+            fill=PANEL_BG,
+            outline="",
+        )
+        for tick in (25, 50, 75):
+            tick_y = graph_top + graph_height - (graph_height * tick / 100)
+            self.create_line(x, tick_y, x + graph_width, tick_y, fill="#dde7e3")
+
+        history = list(self.samples.get(int(gpu["index"]), []))
+        if not history:
+            return
+        if len(history) == 1:
+            history.append(history[0])
+        step = graph_width / max(1, len(history) - 1)
+        points: list[float] = []
+        for index, value in enumerate(history):
+            px = x + index * step
+            py = graph_top + graph_height - (graph_height * max(0, min(100, value)) / 100)
+            points.extend([px, py])
+        area = [x, graph_top + graph_height, *points, x + (len(history) - 1) * step, graph_top + graph_height]
+        self.create_polygon(area, fill=color, outline="", stipple="gray50")
+        self.create_line(points, fill=color, width=3, smooth=True)
+        self.create_oval(points[-2] - 4, points[-1] - 4, points[-2] + 4, points[-1] + 4, fill=color, outline="")
+
+
 class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
@@ -283,12 +371,15 @@ class DreamRenderApp:
         self.monitor_process: subprocess.Popen[str] | None = None
         self.worker_should_run = False
         self.worker_restart_after = 0.0
+        self.gpu_poll_running = False
+        self.nvidia_smi = self.find_nvidia_smi()
 
         self.configure_style()
         self.build_ui()
         self.adopt_existing_worker()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(1000, self.refresh_status)
+        self.root.after(500, self.refresh_gpu_activity)
 
     def build_ui(self) -> None:
         outer = ttk.Frame(self.root, padding=22, style="App.TFrame")
@@ -381,6 +472,11 @@ class DreamRenderApp:
         queue_card.pack(fill=X, pady=(0, 14))
         self.summary = ttk.Label(self.card_content(queue_card), text="", justify=LEFT, style="Body.TLabel")
         self.summary.pack(anchor="w", fill=X)
+
+        gpu_card = self.card(right, "GPU Activity")
+        gpu_card.pack(fill=X, pady=(0, 14))
+        self.gpu_graph = GpuActivityGraph(self.card_content(gpu_card))
+        self.gpu_graph.pack(fill=X, expand=True)
 
         log_card = self.card(right, "Worker Log", actions=(("Copy Log", self.copy_log),))
         log_card.pack(fill=BOTH, expand=True)
@@ -790,6 +886,65 @@ class DreamRenderApp:
             return True
         except OSError:
             return False
+
+    def find_nvidia_smi(self) -> str | None:
+        found = shutil.which("nvidia-smi")
+        if found:
+            return found
+        candidate = Path(r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe")
+        return str(candidate) if candidate.exists() else None
+
+    def refresh_gpu_activity(self) -> None:
+        if not self.gpu_poll_running:
+            self.gpu_poll_running = True
+            threading.Thread(target=self.poll_gpu_activity, daemon=True).start()
+        self.root.after(2000, self.refresh_gpu_activity)
+
+    def poll_gpu_activity(self) -> None:
+        try:
+            gpus, message = self.query_gpu_activity()
+            self.root.after(0, self.gpu_graph.update_gpus, gpus, message)
+        finally:
+            self.gpu_poll_running = False
+
+    def query_gpu_activity(self) -> tuple[list[dict[str, object]], str | None]:
+        if not self.nvidia_smi:
+            return [], "NVIDIA GPU data is not available. Install NVIDIA drivers with nvidia-smi."
+        command = [
+            self.nvidia_smi,
+            "--query-gpu=index,name,utilization.gpu,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except Exception as exc:
+            return [], f"Could not read GPU data: {exc}"
+        if result.returncode != 0:
+            return [], result.stderr.strip() or "Could not read GPU data from nvidia-smi."
+        gpus: list[dict[str, object]] = []
+        for line in result.stdout.splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) != 5:
+                continue
+            try:
+                gpus.append(
+                    {
+                        "index": int(parts[0]),
+                        "name": parts[1],
+                        "util": int(parts[2]),
+                        "memory_used": int(parts[3]),
+                        "memory_total": int(parts[4]),
+                    }
+                )
+            except ValueError:
+                continue
+        return gpus, None if gpus else "No GPU data returned by nvidia-smi."
 
     def find_existing_worker_pid(self) -> int | None:
         if os.name != "nt":
