@@ -336,6 +336,10 @@ def claim_next_frames(
             job_chunk_size = max(1, job_chunk_size)
 
             frame_paths = sorted((job_dir / "frames").glob("*.json"))
+            if reconcile_rendered_outputs(job_dir, job, frame_paths, stale_after_seconds):
+                job = read_json(job_dir / "job.json")
+                if job.get("status") in {"paused", "done", "cancelled", "draining", "archived"}:
+                    continue
             for start_index, first_frame_path in enumerate(frame_paths):
                 frame = read_json(first_frame_path)
                 if not frame_is_claimable(frame, stale_after_seconds):
@@ -370,6 +374,34 @@ def claim_next_frames(
                     write_json_atomic(path, claimed)
                 return job_dir, job, claimed_paths
     return None
+
+
+def reconcile_rendered_outputs(job_dir: Path, job: dict[str, Any], frame_paths: list[Path], stale_after_seconds: int) -> bool:
+    changed = False
+    for frame_path in frame_paths:
+        with FileLock(frame_path.with_suffix(".lock")) as locked:
+            if not locked:
+                continue
+            frame = read_json(frame_path)
+            status = frame.get("status")
+            if status == "done":
+                continue
+            if status == "rendering" and not frame_is_claimable(frame, stale_after_seconds):
+                continue
+            if status not in {"queued", "failed", "rendering"}:
+                continue
+            since = parse_utc(str(job.get("created_at", ""))) or 0.0
+            if not rendered_frame_output_exists(job, int(frame["frame"]), since):
+                continue
+            frame["status"] = "done"
+            frame["completion_note"] = "Existing output image found before claim."
+            frame["finished_at"] = frame.get("finished_at") or utc_now()
+            frame["updated_at"] = utc_now()
+            write_json_atomic(frame_path, frame)
+            changed = True
+    if changed:
+        update_job_status_from_frames(job_dir)
+    return changed
 
 
 def claim_next_frame(share: Share, worker_id: str, stale_after_seconds: int) -> tuple[Path, dict[str, Any], Path] | None:
@@ -583,15 +615,18 @@ def complete_frame(frame_path: Path, worker_id: str, return_code: int, log_path:
 
 
 def complete_frames(frame_paths: list[Path], worker_id: str, return_code: int, log_path: Path) -> None:
-    job_dirs = set()
+    job_dirs: set[Path] = set()
+    jobs: dict[Path, dict[str, Any]] = {}
     for frame_path in frame_paths:
-        job_dirs.add(frame_path.parents[1])
-        complete_one_frame(frame_path, worker_id, return_code, log_path)
+        job_dir = frame_path.parents[1]
+        job_dirs.add(job_dir)
+        job = jobs.setdefault(job_dir, read_json(job_dir / "job.json"))
+        complete_one_frame(frame_path, worker_id, return_code, log_path, job)
     for job_dir in job_dirs:
         update_job_status_from_frames(job_dir)
 
 
-def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_path: Path) -> None:
+def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_path: Path, job: dict[str, Any] | None = None) -> None:
     with FileLock(frame_path.with_suffix(".lock")) as locked:
         if not locked:
             return
@@ -602,6 +637,13 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
             frame["status"] = "done"
         elif return_code == -9:
             frame["status"] = "cancelled"
+        elif job and rendered_frame_output_exists(
+            job,
+            int(frame["frame"]),
+            parse_utc(str(job.get("created_at", ""))) or 0.0,
+        ):
+            frame["status"] = "done"
+            frame["completion_note"] = "Output image found after Cinema 4D returned a non-zero exit code."
         else:
             frame["status"] = "failed"
         frame["return_code"] = return_code
@@ -794,6 +836,37 @@ def expand_c4d_output_path(job: dict[str, Any]) -> list[Path]:
     if "$" in lowered and project_folder.exists():
         paths.append(project_folder / "render")
     return paths
+
+
+def rendered_frame_output_exists(job: dict[str, Any], frame_number: int, since: float | None = None) -> bool:
+    earliest_output_time = since if since is not None else parse_utc(str(job.get("created_at", ""))) or 0.0
+    frame_tokens = {
+        f"{frame_number:04d}",
+        f"{frame_number:05d}",
+        f"{frame_number:06d}",
+    }
+    search_dirs = []
+    for output in expand_c4d_output_path(job):
+        if output.suffix:
+            search_dirs.append(output.parent)
+        else:
+            search_dirs.append(output)
+            search_dirs.append(output.parent)
+
+    for folder in dict.fromkeys(search_dirs):
+        if not folder.exists() or not folder.is_dir():
+            continue
+        for path in folder.iterdir():
+            if path.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            if path.stat().st_size <= 0:
+                continue
+            if path.stat().st_mtime < earliest_output_time - 2:
+                continue
+            name = path.stem.lower()
+            if any(token in name for token in frame_tokens):
+                return True
+    return False
 
 
 def find_frame_preview(share: Share, job_id: str, frame_number: int) -> dict[str, Any]:
