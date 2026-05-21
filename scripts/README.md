@@ -11,10 +11,8 @@ Use this almost always.
 It opens the DreamRender App, where you can:
 
 - choose the shared queue folder
-- start/stop this machine as a worker
-- start the dashboard monitor
+- start/stop DreamRender on this machine
 - open the dashboard
-- initialize the queue
 - run diagnostics
 
 If you are unsure, use this.

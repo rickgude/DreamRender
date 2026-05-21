@@ -67,8 +67,8 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 ## Which Script Should I Use?
 
 Use `START_DreamRender_App.bat` for normal work. It is the main control panel
-and can start the worker, monitor, dashboard, queue setup, diagnostics, and
-desktop shortcut from one place.
+and can start DreamRender, open the dashboard, run diagnostics, open the queue
+folder, and create a desktop shortcut from one place.
 
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run

@@ -117,7 +117,6 @@ class DreamRenderApp:
         controls_grid = ttk.Frame(actions, style="Card.TFrame")
         controls_grid.pack(fill=X)
         controls = (
-            ("Start Monitor", self.start_monitor, "App.TButton"),
             ("Open Queue Folder", self.open_queue_folder, "App.TButton"),
             ("Desktop Shortcut", self.create_desktop_shortcut, "App.TButton"),
             ("Run Diagnostics", self.run_doctor, "App.TButton"),
