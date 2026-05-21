@@ -10,7 +10,9 @@ Use this almost always.
 
 It opens the DreamRender App, where you can:
 
+- run Quick Setup
 - choose the shared queue folder
+- install the Cinema 4D plugin
 - start/stop DreamRender on this machine
 - open the dashboard
 - run diagnostics
@@ -19,7 +21,11 @@ If you are unsure, use this.
 
 ### `INSTALL_Cinema4D_Plugin_2026.bat`
 
-Use this after downloading/updating DreamRender.
+You usually do not need this anymore, because the DreamRender App has an
+`Install C4D Plugin` button.
+
+Use this batch file only if you want to install the plugin without opening the
+app.
 
 It installs the Cinema 4D 2026 submitter plugin. Restart Cinema 4D after running
 it, then open:

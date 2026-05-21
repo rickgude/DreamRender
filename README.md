@@ -18,9 +18,9 @@ New install? Follow the artist-friendly guide:
 That guide covers:
 
 - installing regular Python
-- starting the DreamRender app
+- running the DreamRender app Quick Setup
 - choosing the shared queue folder
-- installing the Cinema 4D plugin
+- installing the Cinema 4D plugin from the app
 - starting workers on render machines
 - submitting from Cinema 4D
 - fixing the most common setup problems
@@ -56,19 +56,21 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 ## Day-To-Day Workflow
 
 1. Start `scripts\START_DreamRender_App.bat`.
-2. In the app, choose the DreamRender share folder.
-3. Click `Start DreamRender` on every machine that should render.
-4. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
-5. Click `Check Scene`.
-6. Click `Submit Project`.
-7. Confirm `Save` when DreamRender asks to save the scene.
-8. Watch the dashboard.
+2. First time only: click `Quick Setup`.
+3. Make sure the `Health` panel is OK.
+4. Click `Start DreamRender` on every machine that should render.
+5. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
+6. Click `Check Scene`.
+7. Click `Submit Project`.
+8. Confirm `Save` when DreamRender asks to save the scene.
+9. Watch the dashboard.
 
 ## Which Script Should I Use?
 
 Use `START_DreamRender_App.bat` for normal work. It is the main control panel
 and can start DreamRender, open the dashboard, run diagnostics, open the queue
-folder, and create a desktop shortcut from one place.
+folder, install the Cinema 4D plugin, and create a desktop shortcut from one
+place.
 
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run

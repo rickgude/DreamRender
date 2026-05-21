@@ -30,6 +30,8 @@ from .queue import (
 CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_SHARE = Path(__file__).resolve().parents[2] / "DreamRenderShare"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+C4D_VERSION = "2026"
 WINDOW_BG = "#e9e9e7"
 APP_BG = "#f4f8f7"
 CARD_BG = "#fbfcfa"
@@ -364,10 +366,13 @@ class DreamRenderApp:
         self.monitor_port = StringVar(value=str(config.get("monitor_port", 8766)))
         self.keep_worker_running = BooleanVar(value=bool(config.get("keep_worker_running", True)))
         self.quit_after_batch = BooleanVar(value=False)
+        self.onboarding_seen = bool(config.get("onboarding_seen", False))
         self.status = StringVar(value="Ready")
         self.worker_state = StringVar(value="Worker: stopped")
         self.monitor_state = StringVar(value="Monitor: stopped")
         self.start_button_text = StringVar(value="Start DreamRender")
+        self.setup_status = StringVar(value="Run Quick Setup to prepare this machine.")
+        self.health_status = StringVar(value="Checking setup...")
 
         self.worker_process: subprocess.Popen[str] | None = None
         self.adopted_worker_pid: int | None = None
@@ -381,6 +386,8 @@ class DreamRenderApp:
         self.build_ui()
         self.adopt_existing_worker()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        if not self.onboarding_seen:
+            self.root.after(700, self.offer_first_run_setup)
         self.root.after(1000, self.refresh_status)
         self.root.after(500, self.refresh_gpu_activity)
 
@@ -427,6 +434,15 @@ class DreamRenderApp:
         right = ttk.Frame(content, style="App.TFrame")
         right.grid(row=0, column=1, sticky="nsew")
 
+        onboarding = self.card(left, "Onboarding")
+        onboarding.pack(fill=X, pady=(0, 14))
+        onboarding_body = self.card_content(onboarding)
+        ttk.Label(onboarding_body, textvariable=self.setup_status, wraplength=370, justify=LEFT, style="Body.TLabel").pack(anchor="w", fill=X, pady=(0, 12))
+        onboarding_buttons = ttk.Frame(onboarding_body, style="Card.TFrame")
+        onboarding_buttons.pack(fill=X)
+        self.pill_button(onboarding_buttons, text="Quick Setup", command=self.run_setup_wizard, fill=START_COLOR, active_fill="#2a2d2d", foreground="#ffffff").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
+        self.pill_button(onboarding_buttons, text="Install C4D Plugin", command=self.install_c4d_plugin).pack(side=LEFT, fill=X, expand=True)
+
         setup = self.card(left, "Setup")
         setup.pack(fill=X, pady=(0, 14))
         self.path_row(setup, "Queue", self.share, self.pick_share)
@@ -471,6 +487,11 @@ class DreamRenderApp:
             )
         controls_grid.columnconfigure(0, weight=0)
         controls_grid.columnconfigure(1, weight=0)
+
+        health_card = self.card(right, "Health")
+        health_card.pack(fill=X, pady=(0, 14))
+        self.health = ttk.Label(self.card_content(health_card), textvariable=self.health_status, justify=LEFT, style="Body.TLabel")
+        self.health.pack(anchor="w", fill=X)
 
         queue_card = self.card(right, "Queue")
         queue_card.pack(fill=X, pady=(0, 14))
@@ -647,11 +668,144 @@ class DreamRenderApp:
                 "chunk_size": self.chunk_size.get(),
                 "monitor_port": self.monitor_port.get(),
                 "keep_worker_running": self.keep_worker_running.get(),
+                "onboarding_seen": self.onboarding_seen,
             }
         )
 
     def python_command(self) -> list[str]:
         return [sys.executable, "-m", "dreamrender"]
+
+    def offer_first_run_setup(self) -> None:
+        self.onboarding_seen = True
+        self.persist()
+        if messagebox.askyesno(
+            "DreamRender Quick Setup",
+            "Set up this machine for DreamRender now?\n\n"
+            "This checks the queue folder, finds Cinema 4D, and installs the Cinema 4D submitter plugin.",
+        ):
+            self.run_setup_wizard()
+
+    def find_c4d_commandline(self) -> Path | None:
+        candidates = [Path(self.c4d.get()), DEFAULT_C4D]
+        if os.name == "nt":
+            for base in [Path(os.environ.get("ProgramFiles", r"C:\Program Files")), Path(os.environ.get("ProgramW6432", r"C:\Program Files"))]:
+                candidates.extend(sorted(base.glob(f"Maxon/Cinema 4D {C4D_VERSION}*/Commandline.exe"), reverse=True))
+                candidates.extend(sorted(base.glob("Maxon/Cinema 4D */Commandline.exe"), reverse=True))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def c4d_prefs_dirs(self) -> list[Path]:
+        if os.name != "nt":
+            return []
+        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        maxon = appdata / "Maxon"
+        return sorted(maxon.glob(f"Maxon Cinema 4D {C4D_VERSION}_*"), reverse=True)
+
+    def c4d_plugin_targets(self) -> list[Path]:
+        return [prefs / "plugins" / "DreamRender" for prefs in self.c4d_prefs_dirs()]
+
+    def c4d_plugin_installed(self) -> bool:
+        return any((target / "DreamRender.pyp").exists() and (target / "DreamRenderSubmit.py").exists() for target in self.c4d_plugin_targets())
+
+    def install_c4d_plugin(self) -> bool:
+        source_script = REPO_ROOT / "cinema4d" / "DreamRenderSubmit.py"
+        source_plugin = REPO_ROOT / "cinema4d" / "plugin" / "DreamRender.pyp"
+        if not source_script.exists() or not source_plugin.exists():
+            messagebox.showerror("DreamRender", "The Cinema 4D plugin files are missing from this DreamRender folder.")
+            return False
+        targets = self.c4d_plugin_targets()
+        if not targets:
+            messagebox.showwarning(
+                "DreamRender",
+                f"No Cinema 4D {C4D_VERSION} preferences folder was found.\n\n"
+                f"Open Cinema 4D {C4D_VERSION} once, close it, then run Install C4D Plugin again.",
+            )
+            return False
+        installed = []
+        try:
+            for target in targets:
+                target.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_script, target / "DreamRenderSubmit.py")
+                shutil.copy2(source_plugin, target / "DreamRender.pyp")
+                old_script = target.parents[1] / "library" / "scripts" / "DreamRenderSubmit.py"
+                if old_script.exists():
+                    old_script.unlink()
+                installed.append(str(target))
+        except Exception as exc:
+            messagebox.showerror("DreamRender", f"Could not install the Cinema 4D plugin:\n{exc}")
+            return False
+        self.status.set("Cinema 4D plugin installed")
+        self.setup_status.set(f"Plugin installed. Restart Cinema 4D, then use Extensions > DreamRender Submit Render.")
+        self.update_health_status()
+        messagebox.showinfo("DreamRender", "Cinema 4D plugin installed to:\n\n" + "\n".join(installed))
+        return True
+
+    def run_setup_wizard(self) -> None:
+        self.onboarding_seen = True
+        self.persist()
+        notes: list[str] = []
+
+        share = Path(self.share.get())
+        if not share.exists():
+            if messagebox.askyesno("DreamRender Quick Setup", f"Create the DreamRender queue folder here?\n\n{share}"):
+                self.init_queue(silent=True)
+                notes.append("Queue folder created.")
+            else:
+                self.pick_share()
+                share = Path(self.share.get())
+        else:
+            self.init_queue(silent=True)
+            notes.append("Queue folder is ready.")
+
+        c4d = self.find_c4d_commandline()
+        if c4d:
+            self.c4d.set(str(c4d))
+            self.persist()
+            notes.append(f"Cinema 4D found: {c4d}")
+        else:
+            messagebox.showwarning("DreamRender Quick Setup", f"Cinema 4D {C4D_VERSION} Commandline.exe was not found automatically. Please choose it.")
+            self.pick_c4d()
+            if Path(self.c4d.get()).exists():
+                notes.append(f"Cinema 4D set: {self.c4d.get()}")
+            else:
+                notes.append("Cinema 4D still needs to be selected.")
+
+        if self.c4d_plugin_installed():
+            notes.append("Cinema 4D plugin is installed.")
+        elif messagebox.askyesno("DreamRender Quick Setup", "Install the Cinema 4D submitter plugin now?"):
+            if self.install_c4d_plugin():
+                notes.append("Cinema 4D plugin installed.")
+            else:
+                notes.append("Cinema 4D plugin still needs attention.")
+        else:
+            notes.append("Cinema 4D plugin was skipped.")
+
+        self.update_health_status()
+        self.setup_status.set("Quick Setup finished. Start DreamRender on each render node, then submit from Cinema 4D.")
+        messagebox.showinfo("DreamRender Quick Setup", "\n".join(notes))
+
+    def update_health_status(self) -> None:
+        lines = []
+        share = Path(self.share.get())
+        c4d = Path(self.c4d.get())
+        lines.append(("OK" if share.exists() else "Needs setup") + f"  Queue: {share}")
+        lines.append(("OK" if c4d.exists() else "Needs setup") + f"  Cinema 4D: {c4d}")
+        lines.append(("OK" if self.c4d_plugin_installed() else "Needs setup") + f"  Cinema 4D plugin for {C4D_VERSION}")
+        if share.exists():
+            try:
+                probe = share / f"write-test-{int(time.time() * 1000)}.tmp"
+                probe.write_text("ok", encoding="utf-8")
+                probe.unlink()
+                folders_ready = (share / "jobs").exists() and (share / "workers").exists()
+                detail = "writable" if folders_ready else "writable, needs queue initialization"
+                lines.append(("OK" if folders_ready else "Needs setup") + f"  Queue access: {detail}")
+            except Exception as exc:
+                lines.append(f"Needs setup  Queue access: {exc}")
+        else:
+            lines.append("Needs setup  Queue access: folder does not exist")
+        self.health_status.set("\n".join(lines))
 
     def toggle_dreamrender(self) -> None:
         if self.worker_is_running():
@@ -1111,6 +1265,9 @@ class DreamRenderApp:
             active = sum(1 for worker in workers if worker.get("state") == "online")
             old_workers = sum(1 for worker in workers if not worker.get("code_current"))
             repair = snapshot.get("repair", {})
+            self.update_health_status()
+            if Path(self.share.get()).exists() and Path(self.c4d.get()).exists() and self.c4d_plugin_installed():
+                self.setup_status.set("This machine is ready. Start DreamRender here, then submit from Cinema 4D.")
             health = f"Code: {CODE_SIGNATURE}"
             if old_workers:
                 health += f"    Restart needed: {old_workers} worker(s)"

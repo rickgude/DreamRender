@@ -647,7 +647,11 @@ HTML = r"""<!doctype html>
       const grouped = groupJobs(data.jobs);
       document.getElementById("jobs").innerHTML = data.jobs.length
         ? `${grouped.groups.map(renderGroup).join("")}${grouped.standalone.map(renderJob).join("")}`
-        : `<div class="empty">No jobs in the queue.</div>`;
+        : `<div class="empty">
+            <strong>No jobs in the queue yet.</strong><br><br>
+            Start DreamRender on each render node, then submit from Cinema 4D with
+            Extensions &gt; DreamRender Submit Render.
+          </div>`;
     }
     refresh();
     setInterval(refresh, 2500);

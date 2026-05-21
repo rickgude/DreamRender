@@ -71,9 +71,15 @@ scripts\START_DreamRender_App.bat
 
 In the app:
 
-1. Choose the DreamRender share folder.
-2. Click `Start DreamRender` on every machine that should render.
-3. Click `Open Dashboard` when you want to watch the farm.
+1. Click `Quick Setup`.
+2. Choose or create the DreamRender share folder.
+3. Let DreamRender detect Cinema 4D.
+4. Click `Install C4D Plugin` when prompted.
+5. Click `Start DreamRender` on every machine that should render.
+6. Click `Open Dashboard` when you want to watch the farm.
+
+The `Health` panel should say the queue, Cinema 4D path, plugin, and queue
+access are OK before you render.
 
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
@@ -85,7 +91,13 @@ while rendering.
 
 ## 5. Install The Cinema 4D Plugin
 
-Run:
+The easiest way is from the DreamRender app:
+
+```text
+Install C4D Plugin
+```
+
+You can also run the installer manually:
 
 ```text
 scripts\INSTALL_Cinema4D_Plugin_2026.bat
@@ -189,6 +201,8 @@ scripts\INSTALL_Cinema4D_Plugin_2026.bat
 
 Then restart Cinema 4D 2026.
 
+You can also click `Install C4D Plugin` in the DreamRender app.
+
 ### A worker is offline in the dashboard
 
 Open the DreamRender app on that machine and click `Start DreamRender`.
@@ -222,9 +236,12 @@ After pulling or downloading a newer version:
 1. Close Cinema 4D.
 2. Close the DreamRender app.
 3. Replace/update the DreamRender folder.
-4. Run `scripts\INSTALL_Cinema4D_Plugin_2026.bat`.
+4. Start the DreamRender app and click `Install C4D Plugin`.
 5. Restart Cinema 4D.
-6. Start `scripts\START_DreamRender_App.bat`.
+6. Click `Start DreamRender`.
+
+If the dashboard says a worker needs restart, click `Restart Outdated Workers`
+in the dashboard.
 
 ## What DreamRender Does Not Do Yet
 
