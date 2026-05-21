@@ -261,8 +261,8 @@ class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
-        self.root.geometry("1100x1500")
-        self.root.minsize(980, 1000)
+        self.root.geometry("1100x1000")
+        self.root.minsize(980, 820)
         self.root.configure(bg=WINDOW_BG)
 
         config = load_config()
