@@ -35,8 +35,8 @@ class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
-        self.root.geometry("980x820")
-        self.root.minsize(900, 760)
+        self.root.geometry("1100x880")
+        self.root.minsize(980, 820)
         self.root.configure(bg="#edf3ef")
 
         config = load_config()
@@ -105,14 +105,30 @@ class DreamRenderApp:
 
         actions = self.card(left, "Controls")
         actions.pack(fill=X)
-        ttk.Button(actions, text="Start Worker", command=self.start_worker, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Stop Worker", command=self.stop_worker, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Start Monitor", command=self.start_monitor, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Initialize Queue", command=self.init_queue, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Open Queue Folder", command=self.open_queue_folder, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Create Desktop Shortcut", command=self.create_desktop_shortcut, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Doctor", command=self.run_doctor, style="App.TButton").pack(fill=X, pady=(0, 8))
-        ttk.Button(actions, text="Stop All", command=self.stop_all, style="Danger.TButton").pack(fill=X)
+        controls_grid = ttk.Frame(actions, style="Card.TFrame")
+        controls_grid.pack(fill=X)
+        controls = (
+            ("Start Worker", self.start_worker, "App.TButton"),
+            ("Stop Worker", self.stop_worker, "App.TButton"),
+            ("Start Monitor", self.start_monitor, "App.TButton"),
+            ("Initialize Queue", self.init_queue, "App.TButton"),
+            ("Open Queue Folder", self.open_queue_folder, "App.TButton"),
+            ("Desktop Shortcut", self.create_desktop_shortcut, "App.TButton"),
+            ("Doctor", self.run_doctor, "App.TButton"),
+            ("Stop All", self.stop_all, "Danger.TButton"),
+        )
+        for index, (label, command, style_name) in enumerate(controls):
+            row = index // 2
+            column = index % 2
+            ttk.Button(controls_grid, text=label, command=command, style=style_name).grid(
+                row=row,
+                column=column,
+                sticky="ew",
+                padx=(0, 8) if column == 0 else (0, 0),
+                pady=(0, 8) if row < 3 else (0, 0),
+            )
+        controls_grid.columnconfigure(0, weight=1)
+        controls_grid.columnconfigure(1, weight=1)
 
         queue_card = self.card(right, "Queue")
         queue_card.pack(fill=X, pady=(0, 14))
@@ -243,7 +259,7 @@ class DreamRenderApp:
         return [sys.executable, "-m", "dreamrender"]
 
     def toggle_dreamrender(self) -> None:
-        if self.worker_is_running() or self.monitor_is_running():
+        if self.worker_is_running():
             self.stop_all()
         else:
             self.start_all()
@@ -445,13 +461,8 @@ class DreamRenderApp:
         self.adopted_worker_pid = None
         return False
 
-    def monitor_is_running(self) -> bool:
-        if self.monitor_process and self.monitor_process.poll() is None:
-            return True
-        return self.monitor_is_reachable()
-
     def update_start_button(self) -> None:
-        if self.worker_is_running() or self.monitor_is_running():
+        if self.worker_is_running():
             self.start_button_text.set("Stop DreamRender")
         else:
             self.start_button_text.set("Start DreamRender")
