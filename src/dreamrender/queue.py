@@ -17,7 +17,7 @@ from typing import Any
 
 
 DEFAULT_COMMAND_TEMPLATE = '"{c4d}" -render "{scene}" {take_arg} -frame {start_frame} {end_frame}'
-OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{g_startupPath}}/plugins" -render "{scene}" {take_arg} -frame {start_frame} {end_frame} 1'
+OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{g_startupPath}}/plugins" -render "{scene}" {take_arg} -frame {start_frame} {end_frame} 1 -oimage "{output}"'
 BROWSER_PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 CONVERTIBLE_PREVIEW_EXTENSIONS = {".exr", ".tif", ".tiff"}
 IMAGE_EXTENSIONS = BROWSER_PREVIEW_EXTENSIONS | CONVERTIBLE_PREVIEW_EXTENSIONS

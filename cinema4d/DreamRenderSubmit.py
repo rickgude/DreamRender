@@ -919,8 +919,10 @@ def output_folder_check(output):
     return CHECK_WARNING, "path has no folder", output
 
 
-def output_path_info_check(output, source):
+def output_path_info_check(output, source, renderer=""):
     if source == "fallback":
+        if renderer == "Octane":
+            return CHECK_OK, "Octane commandline output", output
         return CHECK_ERROR, "no render settings output path", "Set the save/output path in Cinema 4D Render Settings"
     return output_folder_check(output)
 
@@ -933,13 +935,13 @@ def worst_level(levels):
     return CHECK_OK
 
 
-def marked_take_output_check(doc, marked_takes):
+def marked_take_output_check(doc, marked_takes, renderer=""):
     levels = []
     details = []
     for take in marked_takes:
         render_data = get_take_render_data(doc, take)
         output, source = get_output_path_info_for_render_data(doc, render_data)
-        level, message, detail = output_path_info_check(output, source)
+        level, message, detail = output_path_info_check(output, source, renderer)
         levels.append(level)
         if level != CHECK_OK:
             details.append("%s: %s" % (take_name(take), detail or message))
@@ -952,6 +954,7 @@ def marked_take_output_check(doc, marked_takes):
 def scene_report_step_builders(doc, share, output, start, end, chunk_size, submit_marked_takes):
     marked_takes = get_marked_takes(doc) if submit_marked_takes else []
     take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
+    renderer, _renderer_info = detect_render_engine(doc)
 
     def camera_row():
         level, message, info = active_camera_info(doc)
@@ -1002,9 +1005,9 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
 
     def output_row():
         if take_driven:
-            level, message, info = marked_take_output_check(doc, marked_takes)
+            level, message, info = marked_take_output_check(doc, marked_takes, renderer)
         else:
-            level, message, info = output_path_info_check(output, get_output_path_info(doc)[1])
+            level, message, info = output_path_info_check(output, get_output_path_info(doc)[1], renderer)
         return {"label": "OUTPUT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
 
     def multipass_row():
@@ -1218,6 +1221,7 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
     project = get_project_folder(doc)
     marked_takes = get_marked_takes(doc) if submit_marked_takes else []
     take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
+    renderer, _renderer_info = detect_render_engine(doc)
 
     if document_folder:
         add_check(checks, CHECK_OK, "Scene has been saved", os.path.join(document_folder, document_name))
@@ -1261,10 +1265,10 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
         add_check(checks, CHECK_OK, "Frames per batch is valid", str(chunk_size))
 
     if take_driven:
-        level, message, detail = marked_take_output_check(doc, marked_takes)
+        level, message, detail = marked_take_output_check(doc, marked_takes, renderer)
         add_check(checks, level, message, detail)
     elif output:
-        level, message, detail = output_path_info_check(output, get_output_path_info(doc)[1])
+        level, message, detail = output_path_info_check(output, get_output_path_info(doc)[1], renderer)
         add_check(checks, level, message, detail)
     else:
         add_check(checks, CHECK_ERROR, "Output path is empty", "Set an output path in Cinema 4D Render Settings.")
