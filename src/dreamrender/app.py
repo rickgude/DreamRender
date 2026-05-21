@@ -9,7 +9,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Frame, StringVar, Tk, filedialog, messagebox
+from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Frame, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from .queue import Share, doctor_share, queue_snapshot
@@ -121,10 +121,27 @@ class DreamRenderApp:
 
         log_card = self.card(right, "Worker Log")
         log_card.pack(fill=BOTH, expand=True)
-        self.log = ttk.Treeview(log_card, columns=("message",), show="headings", height=14, style="App.Treeview")
-        self.log.heading("message", text="Worker log")
-        self.log.column("message", anchor="w")
-        self.log.pack(fill=BOTH, expand=True)
+        log_frame = ttk.Frame(log_card, style="Card.TFrame")
+        log_frame.pack(fill=BOTH, expand=True)
+        self.log = Text(
+            log_frame,
+            height=14,
+            wrap="none",
+            relief="flat",
+            borderwidth=0,
+            background="#f6faf7",
+            foreground="#0f1111",
+            insertbackground="#0f1111",
+            selectbackground="#cfe8dc",
+            selectforeground="#0f1111",
+            font=("Consolas", 9),
+        )
+        log_y = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
+        log_x = ttk.Scrollbar(log_card, orient="horizontal", command=self.log.xview)
+        self.log.configure(yscrollcommand=log_y.set, xscrollcommand=log_x.set, state="disabled")
+        self.log.pack(side=LEFT, fill=BOTH, expand=True)
+        log_y.pack(side=RIGHT, fill="y")
+        log_x.pack(fill=X, pady=(6, 0))
 
     def configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -153,8 +170,6 @@ class DreamRenderApp:
         style.configure("Accent.TButton", padding=(16, 10), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
         style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
         style.configure("Danger.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#ffe7df", foreground="#9a2c18", bordercolor="#ffc7b8")
-        style.configure("App.Treeview", background="#f6faf7", fieldbackground="#f6faf7", foreground=text, rowheight=24, bordercolor=line)
-        style.configure("App.Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#eef4f0", foreground=text)
 
     def card(self, parent: Frame, title: str) -> ttk.Frame:
         wrapper = ttk.Frame(parent, padding=16, style="Card.TFrame")
@@ -287,11 +302,13 @@ class DreamRenderApp:
     def add_log(self, line: str) -> None:
         if not line:
             return
-        self.log.insert("", END, values=(line,))
-        children = self.log.get_children()
-        if len(children) > 200:
-            self.log.delete(children[0])
-        self.log.see(children[-1])
+        self.log.configure(state="normal")
+        self.log.insert(END, line + "\n")
+        lines = int(self.log.index("end-1c").split(".")[0])
+        if lines > 1000:
+            self.log.delete("1.0", "%d.0" % (lines - 1000))
+        self.log.see(END)
+        self.log.configure(state="disabled")
 
     def stop_worker(self) -> None:
         self.worker_should_run = False
