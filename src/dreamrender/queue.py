@@ -142,9 +142,22 @@ class FileLock:
         if self.handle is not None:
             os.close(self.handle)
             self.handle = None
+        self._release_lock_file()
+
+    def _release_lock_file(self) -> None:
+        for attempt in range(8):
+            try:
+                self.path.unlink()
+                return
+            except FileNotFoundError:
+                return
+            except OSError:
+                time.sleep(0.05 * (attempt + 1))
         try:
             self.path.unlink()
         except FileNotFoundError:
+            pass
+        except OSError:
             pass
 
     def _is_stale(self) -> bool:
