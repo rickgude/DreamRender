@@ -176,28 +176,38 @@ class DreamRenderApp:
         text = "#0f1111"
         muted = "#737a7c"
         line = "#dfe4e1"
-        line_strong = "#ccd4d0"
         accent = "#0f1111"
         orange = "#ff8b3d"
         coral = "#ff5538"
         style.configure("App.TFrame", background=bg)
-        style.configure("Card.TFrame", background=card, relief="solid", borderwidth=1, bordercolor=line)
+        style.configure("Card.TFrame", background=card, relief="flat", borderwidth=0)
         style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 25, "bold"))
         style.configure("Subtle.TLabel", background=bg, foreground=muted, font=("Segoe UI", 10))
         style.configure("CardTitle.TLabel", background=card, foreground=muted, font=("Segoe UI", 9, "bold"))
         style.configure("Body.TLabel", background=card, foreground=text, font=("Segoe UI", 10))
         style.configure("Muted.TLabel", background=card, foreground=muted, font=("Segoe UI", 9))
         style.configure("StatusValue.TLabel", background=card, foreground=text, font=("Segoe UI", 12, "bold"))
-        style.configure("App.TEntry", fieldbackground="#f7faf8", foreground=text, bordercolor=line, lightcolor=line, darkcolor=line, padding=8)
+        style.configure(
+            "App.TEntry",
+            fieldbackground="#f7faf8",
+            foreground=text,
+            borderwidth=0,
+            relief="flat",
+            bordercolor="#f7faf8",
+            lightcolor="#f7faf8",
+            darkcolor="#f7faf8",
+            insertcolor=text,
+            padding=8,
+        )
         style.configure("App.TCheckbutton", background=card, foreground=text, font=("Segoe UI", 10))
         style.map("App.TCheckbutton", background=[("active", card)], foreground=[("active", text)])
-        style.configure("App.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background="#f8faf8", foreground=text, bordercolor=line)
-        style.map("App.TButton", background=[("active", panel_2)], bordercolor=[("active", text)])
-        style.configure("Ghost.TButton", padding=(15, 10), font=("Segoe UI", 10, "bold"), background="#fbfcfa", foreground=text, bordercolor=line)
-        style.map("Ghost.TButton", background=[("active", panel_2)], bordercolor=[("active", line_strong)])
-        style.configure("Accent.TButton", padding=(18, 11), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
+        style.configure("App.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background="#f8faf8", foreground=text, borderwidth=0, relief="flat", bordercolor="#f8faf8")
+        style.map("App.TButton", background=[("active", panel_2)], bordercolor=[("active", panel_2)])
+        style.configure("Ghost.TButton", padding=(15, 10), font=("Segoe UI", 10, "bold"), background="#fbfcfa", foreground=text, borderwidth=0, relief="flat", bordercolor="#fbfcfa")
+        style.map("Ghost.TButton", background=[("active", panel_2)], bordercolor=[("active", panel_2)])
+        style.configure("Accent.TButton", padding=(18, 11), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", borderwidth=0, relief="flat", bordercolor=accent)
         style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
-        style.configure("Danger.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background=coral, foreground="#ffffff", bordercolor=coral)
+        style.configure("Danger.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background=coral, foreground="#ffffff", borderwidth=0, relief="flat", bordercolor=coral)
         style.map("Danger.TButton", background=[("active", orange)], foreground=[("active", "#ffffff")])
 
     def card(self, parent: Frame, title: str, actions=None) -> ttk.Frame:
