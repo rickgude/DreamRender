@@ -9,7 +9,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Canvas, Frame, StringVar, Text, Tk, filedialog, messagebox
+from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Frame, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from .queue import (
@@ -25,15 +25,6 @@ from .queue import (
 CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_SHARE = Path(__file__).resolve().parents[2] / "DreamRenderShare"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
-APP_BG = "#f4f8f7"
-WINDOW_BG = "#e9e9e7"
-CARD_BG = "#fbfcfa"
-PANEL_BG = "#eef5f2"
-TEXT = "#0f1111"
-MUTED = "#737a7c"
-LINE = "#dfe4e1"
-ORANGE = "#ff8b3d"
-CORAL = "#ff5538"
 
 
 def load_config() -> dict[str, object]:
@@ -47,59 +38,13 @@ def save_config(config: dict[str, object]) -> None:
     CONFIG_PATH.write_text(json.dumps(config, indent=2, sort_keys=True), encoding="utf-8")
 
 
-class RoundedPanel(Frame):
-    def __init__(self, parent: Frame, radius: int = 26, padding: int = 18, fill: str = CARD_BG) -> None:
-        super().__init__(parent, background=APP_BG, highlightthickness=0, borderwidth=0)
-        self.radius = radius
-        self.fill = fill
-        self.padding = padding
-        self.canvas = Canvas(self, background=APP_BG, highlightthickness=0, borderwidth=0)
-        self.canvas.pack(fill=BOTH, expand=True)
-        self.content = ttk.Frame(self.canvas, padding=padding, style="Card.TFrame")
-        self.window_id = self.canvas.create_window(padding, padding, anchor="nw", window=self.content)
-        self.bind("<Configure>", self.redraw)
-
-    def redraw(self, _event=None) -> None:
-        width = max(1, self.winfo_width())
-        height = max(1, self.winfo_height())
-        radius = min(self.radius, width // 2, height // 2)
-        self.canvas.delete("panel")
-        self.canvas.create_polygon(
-            radius,
-            0,
-            width - radius,
-            0,
-            width,
-            radius,
-            width,
-            height - radius,
-            width - radius,
-            height,
-            radius,
-            height,
-            0,
-            height - radius,
-            0,
-            radius,
-            smooth=True,
-            splinesteps=18,
-            fill=self.fill,
-            outline=self.fill,
-            tags="panel",
-        )
-        padding = self.padding
-        self.canvas.coords(self.window_id, padding, padding)
-        self.canvas.itemconfigure(self.window_id, width=max(1, width - padding * 2), height=max(1, height - padding * 2))
-        self.canvas.tag_lower("panel")
-
-
 class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
         self.root.geometry("1100x880")
         self.root.minsize(980, 820)
-        self.root.configure(bg=WINDOW_BG)
+        self.root.configure(bg="#e9e9e7")
 
         config = load_config()
         self.share = StringVar(value=str(config.get("share", DEFAULT_SHARE)))
@@ -164,13 +109,12 @@ class DreamRenderApp:
         self.worker_row(setup)
         self.entry_row(setup, "Chunk size", self.chunk_size)
         self.entry_row(setup, "Monitor port", self.monitor_port)
-        ttk.Checkbutton(self.card_content(setup), text="Keep worker running", variable=self.keep_worker_running, command=self.persist, style="App.TCheckbutton").pack(anchor="w", pady=(8, 0))
+        ttk.Checkbutton(setup, text="Keep worker running", variable=self.keep_worker_running, command=self.persist, style="App.TCheckbutton").pack(anchor="w", pady=(8, 0))
 
         actions = self.card(left, "Controls")
         actions.pack(fill=X)
-        action_content = self.card_content(actions)
-        ttk.Checkbutton(action_content, text="Quit After Batch", variable=self.quit_after_batch, command=self.toggle_quit_after_batch, style="App.TCheckbutton").pack(anchor="w", pady=(0, 12))
-        controls_grid = ttk.Frame(action_content, style="Card.TFrame")
+        ttk.Checkbutton(actions, text="Quit After Batch", variable=self.quit_after_batch, command=self.toggle_quit_after_batch, style="App.TCheckbutton").pack(anchor="w", pady=(0, 12))
+        controls_grid = ttk.Frame(actions, style="Card.TFrame")
         controls_grid.pack(fill=X)
         controls = (
             ("Open Queue Folder", self.open_queue_folder, "App.TButton"),
@@ -193,13 +137,12 @@ class DreamRenderApp:
 
         queue_card = self.card(right, "Queue")
         queue_card.pack(fill=X, pady=(0, 14))
-        self.summary = ttk.Label(self.card_content(queue_card), text="", justify=LEFT, style="Body.TLabel")
+        self.summary = ttk.Label(queue_card, text="", justify=LEFT, style="Body.TLabel")
         self.summary.pack(anchor="w", fill=X)
 
         log_card = self.card(right, "Worker Log", actions=(("Copy Log", self.copy_log),))
         log_card.pack(fill=BOTH, expand=True)
-        log_body = self.card_content(log_card)
-        log_frame = ttk.Frame(log_body, style="Card.TFrame")
+        log_frame = ttk.Frame(log_card, style="Card.TFrame")
         log_frame.pack(fill=BOTH, expand=True)
         self.log = Text(
             log_frame,
@@ -215,7 +158,7 @@ class DreamRenderApp:
             font=("Consolas", 9),
         )
         log_y = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
-        log_x = ttk.Scrollbar(log_body, orient="horizontal", command=self.log.xview)
+        log_x = ttk.Scrollbar(log_card, orient="horizontal", command=self.log.xview)
         self.log.configure(yscrollcommand=log_y.set, xscrollcommand=log_x.set, state="disabled")
         self.log.pack(side=LEFT, fill=BOTH, expand=True)
         log_y.pack(side=RIGHT, fill="y")
@@ -227,17 +170,18 @@ class DreamRenderApp:
             style.theme_use("clam")
         except Exception:
             pass
-        bg = APP_BG
-        card = CARD_BG
-        panel_2 = PANEL_BG
-        text = TEXT
-        muted = MUTED
-        line = LINE
-        accent = TEXT
-        orange = ORANGE
-        coral = CORAL
+        bg = "#f4f8f7"
+        card = "#fbfcfa"
+        panel_2 = "#eef5f2"
+        text = "#0f1111"
+        muted = "#737a7c"
+        line = "#dfe4e1"
+        line_strong = "#ccd4d0"
+        accent = "#0f1111"
+        orange = "#ff8b3d"
+        coral = "#ff5538"
         style.configure("App.TFrame", background=bg)
-        style.configure("Card.TFrame", background=card, relief="flat", borderwidth=0)
+        style.configure("Card.TFrame", background=card, relief="solid", borderwidth=1, bordercolor=line)
         style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 25, "bold"))
         style.configure("Subtle.TLabel", background=bg, foreground=muted, font=("Segoe UI", 10))
         style.configure("CardTitle.TLabel", background=card, foreground=muted, font=("Segoe UI", 9, "bold"))
@@ -250,34 +194,28 @@ class DreamRenderApp:
         style.configure("App.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background="#f8faf8", foreground=text, bordercolor=line)
         style.map("App.TButton", background=[("active", panel_2)], bordercolor=[("active", text)])
         style.configure("Ghost.TButton", padding=(15, 10), font=("Segoe UI", 10, "bold"), background="#fbfcfa", foreground=text, bordercolor=line)
-        style.map("Ghost.TButton", background=[("active", panel_2)])
+        style.map("Ghost.TButton", background=[("active", panel_2)], bordercolor=[("active", line_strong)])
         style.configure("Accent.TButton", padding=(18, 11), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
         style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
         style.configure("Danger.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background=coral, foreground="#ffffff", bordercolor=coral)
         style.map("Danger.TButton", background=[("active", orange)], foreground=[("active", "#ffffff")])
 
-    def card(self, parent: Frame, title: str, actions=None) -> RoundedPanel:
-        wrapper = RoundedPanel(parent, radius=28, padding=18, fill=CARD_BG)
-        body = wrapper.content
-        header = ttk.Frame(body, style="Card.TFrame")
+    def card(self, parent: Frame, title: str, actions=None) -> ttk.Frame:
+        wrapper = ttk.Frame(parent, padding=18, style="Card.TFrame")
+        header = ttk.Frame(wrapper, style="Card.TFrame")
         header.pack(fill=X, pady=(0, 12))
         ttk.Label(header, text=title.upper(), style="CardTitle.TLabel").pack(side=LEFT)
         for label, command in actions or ():
             ttk.Button(header, text=label, command=command, style="App.TButton").pack(side=RIGHT)
         return wrapper
 
-    def card_content(self, parent: Frame) -> Frame:
-        return getattr(parent, "content", parent)
-
-    def status_card(self, parent: Frame, title: str, variable: StringVar) -> RoundedPanel:
-        wrapper = RoundedPanel(parent, radius=22, padding=14, fill=CARD_BG)
-        body = wrapper.content
-        ttk.Label(body, text=title.upper(), style="Muted.TLabel").pack(anchor="w")
-        ttk.Label(body, textvariable=variable, style="StatusValue.TLabel").pack(anchor="w", pady=(4, 0))
+    def status_card(self, parent: Frame, title: str, variable: StringVar) -> ttk.Frame:
+        wrapper = ttk.Frame(parent, padding=14, style="Card.TFrame")
+        ttk.Label(wrapper, text=title.upper(), style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(wrapper, textvariable=variable, style="StatusValue.TLabel").pack(anchor="w", pady=(4, 0))
         return wrapper
 
     def path_row(self, parent: Frame, label: str, variable: StringVar, command) -> None:
-        parent = self.card_content(parent)
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill=X, pady=(0, 8))
         ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
@@ -287,14 +225,12 @@ class DreamRenderApp:
         ttk.Button(field, text="Browse", command=command, style="App.TButton").pack(side=RIGHT)
 
     def entry_row(self, parent: Frame, label: str, variable: StringVar) -> None:
-        parent = self.card_content(parent)
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill=X, pady=(0, 8))
         ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
         ttk.Entry(row, textvariable=variable, style="App.TEntry").pack(fill=X, pady=(3, 0))
 
     def worker_row(self, parent: Frame) -> None:
-        parent = self.card_content(parent)
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill=X, pady=(0, 8))
         ttk.Label(row, text="Worker", style="Muted.TLabel").pack(anchor="w")
