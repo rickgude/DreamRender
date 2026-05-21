@@ -98,7 +98,8 @@ The render engine must be installed and licensed on every worker machine.
 For Octane jobs submitted from the Cinema 4D plugin, DreamRender stores the
 detected renderer in the job metadata. Workers then use Octane's recommended
 Cinema 4D command-line module path pattern so the C4D Octane plugin can load in
-background renders.
+background renders. Octane jobs also receive an explicit command-line output path
+because Octane can hide Cinema 4D's standard Save controls.
 
 ## Dashboard
 
