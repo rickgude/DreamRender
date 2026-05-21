@@ -44,7 +44,7 @@ class DreamRenderApp:
         self.root.title("DreamRender")
         self.root.geometry("1100x880")
         self.root.minsize(980, 820)
-        self.root.configure(bg="#edf3ef")
+        self.root.configure(bg="#e9e9e7")
 
         config = load_config()
         self.share = StringVar(value=str(config.get("share", DEFAULT_SHARE)))
@@ -79,7 +79,7 @@ class DreamRenderApp:
         header.pack(fill=X, pady=(0, 16))
         title_area = ttk.Frame(header, style="App.TFrame")
         title_area.pack(side=LEFT, fill=X, expand=True)
-        ttk.Label(title_area, text="DreamRender", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title_area, text="DREAMRENDER", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             title_area,
             text="Small-studio render farm control for Cinema 4D, Redshift, and Octane.",
@@ -150,11 +150,11 @@ class DreamRenderApp:
             wrap="none",
             relief="flat",
             borderwidth=0,
-            background="#f6faf7",
-            foreground="#0f1111",
-            insertbackground="#0f1111",
-            selectbackground="#cfe8dc",
-            selectforeground="#0f1111",
+            background="#111111",
+            foreground="#f6f2e8",
+            insertbackground="#f6f2e8",
+            selectbackground="#8b63f6",
+            selectforeground="#ffffff",
             font=("Consolas", 9),
         )
         log_y = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
@@ -170,33 +170,41 @@ class DreamRenderApp:
             style.theme_use("clam")
         except Exception:
             pass
-        bg = "#edf3ef"
-        card = "#fbfdfb"
+        bg = "#f4f8f7"
+        card = "#fbfcfa"
+        panel_2 = "#eef5f2"
         text = "#0f1111"
-        muted = "#66736f"
-        line = "#dce5df"
+        muted = "#737a7c"
+        line = "#dfe4e1"
+        line_strong = "#ccd4d0"
         accent = "#0f1111"
+        orange = "#ff8b3d"
+        coral = "#ff5538"
         style.configure("App.TFrame", background=bg)
-        style.configure("Card.TFrame", background=card, relief="flat")
-        style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 24, "bold"))
+        style.configure("Card.TFrame", background=card, relief="solid", borderwidth=1, bordercolor=line)
+        style.configure("Title.TLabel", background=bg, foreground=text, font=("Segoe UI", 25, "bold"))
         style.configure("Subtle.TLabel", background=bg, foreground=muted, font=("Segoe UI", 10))
-        style.configure("CardTitle.TLabel", background=card, foreground=text, font=("Segoe UI", 12, "bold"))
+        style.configure("CardTitle.TLabel", background=card, foreground=muted, font=("Segoe UI", 9, "bold"))
         style.configure("Body.TLabel", background=card, foreground=text, font=("Segoe UI", 10))
         style.configure("Muted.TLabel", background=card, foreground=muted, font=("Segoe UI", 9))
-        style.configure("StatusValue.TLabel", background=card, foreground=text, font=("Segoe UI", 11, "bold"))
-        style.configure("App.TEntry", fieldbackground="#f4f7f5", foreground=text, bordercolor=line, lightcolor=line, darkcolor=line, padding=6)
+        style.configure("StatusValue.TLabel", background=card, foreground=text, font=("Segoe UI", 12, "bold"))
+        style.configure("App.TEntry", fieldbackground="#f7faf8", foreground=text, bordercolor=line, lightcolor=line, darkcolor=line, padding=8)
         style.configure("App.TCheckbutton", background=card, foreground=text, font=("Segoe UI", 10))
-        style.configure("App.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#f4f7f5", foreground=text, bordercolor=line)
-        style.configure("Ghost.TButton", padding=(14, 9), font=("Segoe UI", 10, "bold"), background="#f7faf8", foreground=text, bordercolor=line)
-        style.configure("Accent.TButton", padding=(16, 10), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
+        style.map("App.TCheckbutton", background=[("active", card)], foreground=[("active", text)])
+        style.configure("App.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background="#f8faf8", foreground=text, bordercolor=line)
+        style.map("App.TButton", background=[("active", panel_2)], bordercolor=[("active", text)])
+        style.configure("Ghost.TButton", padding=(15, 10), font=("Segoe UI", 10, "bold"), background="#fbfcfa", foreground=text, bordercolor=line)
+        style.map("Ghost.TButton", background=[("active", panel_2)], bordercolor=[("active", line_strong)])
+        style.configure("Accent.TButton", padding=(18, 11), font=("Segoe UI", 10, "bold"), background=accent, foreground="#ffffff", bordercolor=accent)
         style.map("Accent.TButton", background=[("active", "#2a2d2d")], foreground=[("active", "#ffffff")])
-        style.configure("Danger.TButton", padding=(12, 8), font=("Segoe UI", 10, "bold"), background="#ffe7df", foreground="#9a2c18", bordercolor="#ffc7b8")
+        style.configure("Danger.TButton", padding=(13, 9), font=("Segoe UI", 10, "bold"), background=coral, foreground="#ffffff", bordercolor=coral)
+        style.map("Danger.TButton", background=[("active", orange)], foreground=[("active", "#ffffff")])
 
     def card(self, parent: Frame, title: str, actions=None) -> ttk.Frame:
-        wrapper = ttk.Frame(parent, padding=16, style="Card.TFrame")
+        wrapper = ttk.Frame(parent, padding=18, style="Card.TFrame")
         header = ttk.Frame(wrapper, style="Card.TFrame")
         header.pack(fill=X, pady=(0, 12))
-        ttk.Label(header, text=title, style="CardTitle.TLabel").pack(side=LEFT)
+        ttk.Label(header, text=title.upper(), style="CardTitle.TLabel").pack(side=LEFT)
         for label, command in actions or ():
             ttk.Button(header, text=label, command=command, style="App.TButton").pack(side=RIGHT)
         return wrapper
