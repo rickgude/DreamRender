@@ -65,11 +65,12 @@ def save_config(config: dict[str, object]) -> None:
 
 
 class RoundedCard(Frame):
-    def __init__(self, parent: Frame, radius: int = 26, padding: int = 18, fill: str = CARD_BG) -> None:
+    def __init__(self, parent: Frame, radius: int = 26, padding: int = 18, fill: str = CARD_BG, min_height: int = 0) -> None:
         super().__init__(parent, background=APP_BG, borderwidth=0, highlightthickness=0)
         self.radius = radius
         self.padding = padding
         self.fill = fill
+        self.min_height = min_height
         self.image: PhotoImage | None = None
         self.canvas = Canvas(self, background=APP_BG, borderwidth=0, highlightthickness=0)
         self.canvas.pack(fill=BOTH, expand=True)
@@ -80,7 +81,7 @@ class RoundedCard(Frame):
 
     def sync_size(self, _event=None) -> None:
         width = max(1, self.content.winfo_reqwidth() + self.padding * 2)
-        height = max(1, self.content.winfo_reqheight() + self.padding * 2)
+        height = max(1, self.min_height, self.content.winfo_reqheight() + self.padding * 2)
         self.canvas.configure(width=width, height=height)
         self.redraw()
 
@@ -354,8 +355,8 @@ class DreamRenderApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("DreamRender")
-        self.root.geometry("1100x1000")
-        self.root.minsize(980, 820)
+        self.root.geometry("1180x1040")
+        self.root.minsize(1060, 900)
         self.root.configure(bg=WINDOW_BG)
 
         config = load_config()
@@ -425,7 +426,7 @@ class DreamRenderApp:
 
         content = ttk.Frame(outer, style="App.TFrame")
         content.pack(fill=BOTH, expand=True)
-        content.columnconfigure(0, minsize=430, weight=0)
+        content.columnconfigure(0, minsize=500, weight=0)
         content.columnconfigure(1, weight=1)
         content.rowconfigure(0, weight=1)
 
@@ -434,10 +435,12 @@ class DreamRenderApp:
         right = ttk.Frame(content, style="App.TFrame")
         right.grid(row=0, column=1, sticky="nsew")
 
-        onboarding = self.card(left, "Onboarding")
+        onboarding = self.card(left, "Onboarding", min_height=170)
         onboarding.pack(fill=X, pady=(0, 14))
         onboarding_body = self.card_content(onboarding)
-        ttk.Label(onboarding_body, textvariable=self.setup_status, wraplength=370, justify=LEFT, style="Body.TLabel").pack(anchor="w", fill=X, pady=(0, 12))
+        self.setup_label = ttk.Label(onboarding_body, textvariable=self.setup_status, wraplength=420, justify=LEFT, style="Body.TLabel")
+        self.setup_label.pack(anchor="w", fill=X, pady=(0, 18))
+        self.setup_label.bind("<Configure>", lambda event: self.setup_label.configure(wraplength=max(280, event.width - 8)))
         onboarding_buttons = ttk.Frame(onboarding_body, style="Card.TFrame")
         onboarding_buttons.pack(fill=X)
         self.pill_button(onboarding_buttons, text="Quick Setup", command=self.run_setup_wizard, fill=START_COLOR, active_fill="#2a2d2d", foreground="#ffffff").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
@@ -490,13 +493,15 @@ class DreamRenderApp:
 
         health_card = self.card(right, "Health")
         health_card.pack(fill=X, pady=(0, 14))
-        self.health = ttk.Label(self.card_content(health_card), textvariable=self.health_status, justify=LEFT, style="Body.TLabel")
+        self.health = ttk.Label(self.card_content(health_card), textvariable=self.health_status, justify=LEFT, wraplength=560, style="Body.TLabel")
         self.health.pack(anchor="w", fill=X)
+        self.health.bind("<Configure>", lambda event: self.health.configure(wraplength=max(320, event.width - 8)))
 
         queue_card = self.card(right, "Queue")
         queue_card.pack(fill=X, pady=(0, 14))
-        self.summary = ttk.Label(self.card_content(queue_card), text="", justify=LEFT, style="Body.TLabel")
+        self.summary = ttk.Label(self.card_content(queue_card), text="", justify=LEFT, wraplength=560, style="Body.TLabel")
         self.summary.pack(anchor="w", fill=X)
+        self.summary.bind("<Configure>", lambda event: self.summary.configure(wraplength=max(320, event.width - 8)))
 
         gpu_card = self.card(right, "GPU Activity")
         gpu_card.pack(fill=X, pady=(0, 14))
@@ -595,8 +600,8 @@ class DreamRenderApp:
             canvas_bg=canvas_bg,
         )
 
-    def card(self, parent: Frame, title: str, actions=None) -> RoundedCard:
-        wrapper = RoundedCard(parent, radius=28, padding=18, fill=CARD_BG)
+    def card(self, parent: Frame, title: str, actions=None, min_height: int = 0) -> RoundedCard:
+        wrapper = RoundedCard(parent, radius=28, padding=18, fill=CARD_BG, min_height=min_height)
         body = wrapper.content
         header = ttk.Frame(body, style="Card.TFrame")
         header.pack(fill=X, pady=(0, 12))
@@ -612,7 +617,9 @@ class DreamRenderApp:
         wrapper = RoundedCard(parent, radius=22, padding=14, fill=CARD_BG)
         body = wrapper.content
         ttk.Label(body, text=title.upper(), style="Muted.TLabel").pack(anchor="w")
-        ttk.Label(body, textvariable=variable, style="StatusValue.TLabel").pack(anchor="w", pady=(4, 0))
+        label = ttk.Label(body, textvariable=variable, style="StatusValue.TLabel", justify=LEFT, wraplength=300)
+        label.pack(anchor="w", fill=X, pady=(4, 0))
+        label.bind("<Configure>", lambda event: label.configure(wraplength=max(180, event.width - 8)))
         return wrapper
 
     def path_row(self, parent: Frame, label: str, variable: StringVar, command) -> None:
@@ -790,8 +797,8 @@ class DreamRenderApp:
         lines = []
         share = Path(self.share.get())
         c4d = Path(self.c4d.get())
-        lines.append(("OK" if share.exists() else "Needs setup") + f"  Queue: {share}")
-        lines.append(("OK" if c4d.exists() else "Needs setup") + f"  Cinema 4D: {c4d}")
+        lines.append(("OK" if share.exists() else "Needs setup") + f"  Queue\n{share}")
+        lines.append(("OK" if c4d.exists() else "Needs setup") + f"  Cinema 4D\n{c4d}")
         lines.append(("OK" if self.c4d_plugin_installed() else "Needs setup") + f"  Cinema 4D plugin for {C4D_VERSION}")
         if share.exists():
             try:
@@ -1272,16 +1279,16 @@ class DreamRenderApp:
                 self.setup_status.set("This machine is ready. Start DreamRender here, then submit from Cinema 4D.")
             health = f"Code: {CODE_SIGNATURE}"
             if old_workers:
-                health += f"    Restart needed: {old_workers} worker(s)"
+                health += f"\nRestart needed: {old_workers} worker(s)"
             if repair.get("changed"):
-                health += f"    Auto-repaired: {repair['changed']} frame(s)"
+                health += f"\nAuto-repaired: {repair['changed']} frame(s)"
             if jobs:
                 job = jobs[0]
                 stats = job.get("stats", {})
                 self.summary.config(
                     text=(
-                        f"Workers online: {active}    "
-                        f"Current job: {job['name']}    "
+                        f"Workers online: {active}\n"
+                        f"Current job: {job['name']}\n"
                         f"Progress: {job['progress']:.1f}%    "
                         f"Average: {stats.get('avg', '--')}    "
                         f"ETA: {stats.get('eta', '--')}\n"
@@ -1289,7 +1296,7 @@ class DreamRenderApp:
                     )
                 )
             else:
-                self.summary.config(text=f"Workers online: {active}    No queued jobs.\n{health}")
+                self.summary.config(text=f"Workers online: {active}\nNo queued jobs.\n{health}")
         except Exception as exc:
             self.summary.config(text=f"Queue status unavailable: {exc}")
         self.root.after(2500, self.refresh_status)
