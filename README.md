@@ -55,7 +55,7 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Day-To-Day Workflow
 
-1. Start `scripts\START_DreamRender_App.bat`.
+1. Start `scripts\START_DreamRender_App.vbs`.
 2. First time only: click `Quick Setup`.
 3. Make sure the `Health` panel is OK.
 4. Click `Start DreamRender` on every machine that should render.
@@ -67,23 +67,18 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Which Script Should I Use?
 
-Use `START_DreamRender_App.bat` for normal work. It is the main control panel
-and can start DreamRender, open the dashboard, run diagnostics, open the queue
-folder, install the Cinema 4D plugin, and create a desktop shortcut from one
-place.
+Use `START_DreamRender_App.vbs` for normal work. It opens the polished
+DreamRender App without showing a console window. The app can start DreamRender,
+open the dashboard, run diagnostics, open the queue folder, install the Cinema
+4D plugin, and create a desktop shortcut from one place.
 
 Advanced scripts live in `scripts\advanced`. Use
-`ADVANCED_Worker_Only_C4D2026.bat` only when you want a render node to run
-without the app, usually for troubleshooting or a simple headless node. The
-window must stay open while it renders.
+`ADVANCED_Worker_Only_C4D2026.bat` only when you deliberately want a visible
+troubleshooting console.
 
 ## Cinema 4D Plugin
 
-Install the plugin with:
-
-```bat
-scripts\INSTALL_Cinema4D_Plugin_2026.bat
-```
+Install the plugin from the DreamRender App with `Install C4D Plugin`.
 
 Restart Cinema 4D 2026 after installing. The command appears as:
 
@@ -135,11 +130,14 @@ OpenImageIO, or ffmpeg.
 The app is the preferred workflow. These commands are mainly for troubleshooting
 or automation.
 
-Run the app:
+Run the app without a console:
 
 ```bat
-scripts\START_DreamRender_App.bat
+scripts\START_DreamRender_App.vbs
 ```
+
+The commands below are advanced troubleshooting fallbacks and may show a
+console.
 
 Run a worker:
 
@@ -168,8 +166,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-DreamRender can also run without installing the Python package because the batch
-scripts set `PYTHONPATH` to the local `src` folder.
+DreamRender can also run without installing the Python package because the
+launchers set `PYTHONPATH` to the local `src` folder.
 
 ## License
 

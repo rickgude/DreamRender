@@ -35,13 +35,8 @@ Add python.exe to PATH
 DreamRender workers should use regular Python. Do not use Cinema 4D `c4dpy.exe`
 for the worker.
 
-Quick check:
-
-```bat
-scripts\advanced\ADVANCED_Command_Line.bat --help
-```
-
-If this opens DreamRender help, Python is ready.
+Quick check: double-click `scripts\START_DreamRender_App.vbs`. If the
+DreamRender App opens, Python is ready.
 
 ## 3. Create The DreamRender Share
 
@@ -66,7 +61,7 @@ folder using the same paths that Cinema 4D uses.
 Double-click:
 
 ```text
-scripts\START_DreamRender_App.bat
+scripts\START_DreamRender_App.vbs
 ```
 
 In the app:
@@ -84,10 +79,9 @@ access are OK before you render.
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
-Use the app for normal work. Only use
-`scripts\advanced\ADVANCED_Worker_Only_C4D2026.bat` when you deliberately want a
-plain worker console without the app. That advanced worker window must stay open
-while rendering.
+Use the app for normal work. The `.vbs` launcher opens DreamRender without a
+console window. Only use scripts in `scripts\advanced` when you deliberately
+want a visible troubleshooting console.
 
 ## 5. Install The Cinema 4D Plugin
 
@@ -95,12 +89,6 @@ The easiest way is from the DreamRender app:
 
 ```text
 Install C4D Plugin
-```
-
-You can also run the installer manually:
-
-```text
-scripts\INSTALL_Cinema4D_Plugin_2026.bat
 ```
 
 Then restart Cinema 4D 2026.
@@ -115,7 +103,7 @@ If you do not see it:
 
 1. Start Cinema 4D 2026 once.
 2. Close Cinema 4D.
-3. Run `scripts\INSTALL_Cinema4D_Plugin_2026.bat` again.
+3. Click `Install C4D Plugin` in the DreamRender app again.
 4. Start Cinema 4D again.
 5. Check the Extensions menu and Command Manager.
 
@@ -173,17 +161,10 @@ between machines.
 
 ### `dreamrender` is not recognized
 
-Use the batch files in the `scripts` folder instead of typing `dreamrender`
-directly:
+Use the DreamRender App launcher instead of typing `dreamrender` directly:
 
 ```bat
-scripts\START_DreamRender_App.bat
-```
-
-or:
-
-```bat
-scripts\advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+scripts\START_DreamRender_App.vbs
 ```
 
 ### Python is not found
@@ -193,15 +174,7 @@ Store instead, disable the Python app execution aliases in Windows Settings.
 
 ### The C4D plugin is missing
 
-Run:
-
-```bat
-scripts\INSTALL_Cinema4D_Plugin_2026.bat
-```
-
-Then restart Cinema 4D 2026.
-
-You can also click `Install C4D Plugin` in the DreamRender app.
+Click `Install C4D Plugin` in the DreamRender app, then restart Cinema 4D 2026.
 
 ### A worker is offline in the dashboard
 

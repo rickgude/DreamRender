@@ -994,12 +994,14 @@ class DreamRenderApp:
         if os.name != "nt":
             messagebox.showinfo("DreamRender", "Desktop shortcut creation is currently Windows-only.")
             return
-        launcher = Path(__file__).resolve().parents[2] / "scripts" / "START_DreamRender_App.bat"
+        launcher = Path(__file__).resolve().parents[2] / "scripts" / "START_DreamRender_App.vbs"
         desktop = Path.home() / "Desktop" / "DreamRender.lnk"
+        wscript = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wscript.exe"
         script = (
             "$shell = New-Object -ComObject WScript.Shell; "
             f"$shortcut = $shell.CreateShortcut('{desktop}'); "
-            f"$shortcut.TargetPath = '{launcher}'; "
+            f"$shortcut.TargetPath = '{wscript}'; "
+            f"$shortcut.Arguments = '\"{launcher}\"'; "
             f"$shortcut.WorkingDirectory = '{launcher.parent}'; "
             "$shortcut.IconLocation = 'shell32.dll,13'; "
             "$shortcut.Save()"

@@ -11,7 +11,7 @@ if "%SHARE%"=="" set "SHARE=%ROOT%\DreamRenderShare"
 set "PYTHONPATH=%ROOT%\src"
 echo Advanced monitor-only mode.
 echo.
-echo Normal users should start START_DreamRender_App.bat instead.
+echo Normal users should start START_DreamRender_App.vbs instead.
 echo Dashboard: http://127.0.0.1:8766
 echo Share: %SHARE%
 echo.

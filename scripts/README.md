@@ -1,14 +1,15 @@
 # DreamRender Scripts
 
-Use these two for normal installation and daily work:
+Use the no-console launcher for normal installation and daily work:
 
 ## Normal Use
 
-### `START_DreamRender_App.bat`
+### `START_DreamRender_App.vbs`
 
 Use this almost always.
 
-It opens the DreamRender App, where you can:
+It opens the DreamRender App without showing a console window. From there you
+can:
 
 - run Quick Setup
 - choose the shared queue folder
@@ -19,13 +20,17 @@ It opens the DreamRender App, where you can:
 
 If you are unsure, use this.
 
+### `START_DreamRender_App.bat`
+
+Fallback launcher for troubleshooting only. It may show a console window.
+
 ### `INSTALL_Cinema4D_Plugin_2026.bat`
 
 You usually do not need this anymore, because the DreamRender App has an
 `Install C4D Plugin` button.
 
 Use this batch file only if you want to install the plugin without opening the
-app.
+app. It may show a console window.
 
 It installs the Cinema 4D 2026 submitter plugin. Restart Cinema 4D after running
 it, then open:
@@ -41,10 +46,8 @@ scripts they need.
 
 ### `ADVANCED_Worker_Only_C4D2026.bat`
 
-Use only when you want a render node to run as a plain console worker without
-the DreamRender App.
-
-Normal artists should not need this. The window must stay open while rendering.
+Use only when you deliberately want a visible troubleshooting worker console.
+Normal artists should not need this.
 
 ### `ADVANCED_Monitor_Only.bat`
 
