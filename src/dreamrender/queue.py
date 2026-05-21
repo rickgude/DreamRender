@@ -384,31 +384,7 @@ def claim_next_frames(
 
 
 def reconcile_rendered_outputs(job_dir: Path, job: dict[str, Any], frame_paths: list[Path], stale_after_seconds: int) -> bool:
-    changed = False
-    for frame_path in frame_paths:
-        with FileLock(frame_path.with_suffix(".lock")) as locked:
-            if not locked:
-                continue
-            frame = read_json(frame_path)
-            status = frame.get("status")
-            if status == "done":
-                continue
-            if status == "rendering" and not frame_is_claimable(frame, stale_after_seconds):
-                continue
-            if status not in {"queued", "failed", "rendering"}:
-                continue
-            since = parse_utc(str(job.get("created_at", ""))) or 0.0
-            if not rendered_frame_output_exists(job, int(frame["frame"]), since):
-                continue
-            frame["status"] = "done"
-            frame["completion_note"] = "Existing output image found before claim."
-            frame["finished_at"] = frame.get("finished_at") or utc_now()
-            frame["updated_at"] = utc_now()
-            write_json_atomic(frame_path, frame)
-            changed = True
-    if changed:
-        update_job_status_from_frames(job_dir)
-    return changed
+    return repair_job(job_dir, stale_after_seconds=stale_after_seconds, min_output_age_seconds=3)["changed"] > 0
 
 
 def claim_next_frame(share: Share, worker_id: str, stale_after_seconds: int) -> tuple[Path, dict[str, Any], Path] | None:
@@ -645,15 +621,18 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
             frame["status"] = "done"
         elif return_code == -9:
             frame["status"] = "cancelled"
-        elif job and rendered_frame_output_exists(
-            job,
-            int(frame["frame"]),
-            parse_utc(str(job.get("created_at", ""))) or 0.0,
-        ):
-            frame["status"] = "done"
-            frame["completion_note"] = "Output image found after Cinema 4D returned a non-zero exit code."
         else:
-            frame["status"] = "failed"
+            output = find_rendered_frame_output(job, int(frame["frame"]), parse_utc(str(job.get("created_at", ""))) or 0.0, 0) if job else None
+            if output:
+                frame["status"] = "done"
+                frame["output_file"] = output
+                frame["completion_note"] = "Output image found after Cinema 4D returned a non-zero exit code."
+            else:
+                frame["status"] = "failed"
+        if frame.get("status") == "done" and job:
+            output = find_rendered_frame_output(job, int(frame["frame"]), parse_utc(str(job.get("created_at", ""))) or 0.0, 0)
+            if output:
+                frame["output_file"] = output
         frame["return_code"] = return_code
         frame["log"] = str(log_path)
         frame["finished_at"] = utc_now()
@@ -775,10 +754,15 @@ def calculate_job_stats(job: dict[str, Any], frames: list[dict[str, Any]]) -> di
 
 
 def list_frames(job_dir: Path) -> list[dict[str, Any]]:
+    job = read_json(job_dir / "job.json")
+    since = parse_utc(str(job.get("created_at", ""))) or 0.0
     frames = []
     for frame_path in sorted((job_dir / "frames").glob("*.json")):
         frame = read_json(frame_path)
         frame["id"] = frame_path.stem
+        output = find_rendered_frame_output(job, int(frame.get("frame", 0)), since, min_age_seconds=0)
+        if output:
+            frame["output_file"] = output
         frames.append(frame)
     return frames
 
@@ -787,7 +771,41 @@ def get_job_detail(share: Share, job_id: str) -> dict[str, Any]:
     job_dir = share.jobs_dir / job_id
     summary = summarize_job(job_dir)
     summary["frames"] = list_frames(job_dir)
+    summary["timeline"] = job_timeline(job_dir, summary["frames"])
     return summary
+
+
+def job_timeline(job_dir: Path, frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    job = read_json(job_dir / "job.json")
+    events: list[dict[str, Any]] = []
+    if job.get("created_at"):
+        events.append({"time": job["created_at"], "label": "Submitted", "detail": job.get("name", job_dir.name)})
+    if job.get("finished_at"):
+        events.append({"time": job["finished_at"], "label": "Job finished", "detail": job.get("status", "")})
+    seen_batches: set[tuple[str, str, int, int]] = set()
+    for frame in frames:
+        worker_id = str(frame.get("worker_id") or "")
+        chunk_id = str(frame.get("chunk_id") or "")
+        chunk_start = int(frame.get("chunk_start") if frame.get("chunk_start") is not None else frame.get("frame", 0))
+        chunk_end = int(frame.get("chunk_end") if frame.get("chunk_end") is not None else frame.get("frame", 0))
+        batch_key = (worker_id, chunk_id, chunk_start, chunk_end)
+        if frame.get("started_at") and batch_key not in seen_batches:
+            seen_batches.add(batch_key)
+            worker_text = f" by {worker_id}" if worker_id else ""
+            events.append(
+                {
+                    "time": frame["started_at"],
+                    "label": "Batch claimed",
+                    "detail": f"frames {chunk_start}-{chunk_end}{worker_text}",
+                }
+            )
+        if frame.get("finished_at"):
+            detail = f"frame {frame.get('frame')} {frame.get('status')}"
+            if frame.get("completion_note"):
+                detail += f" - {frame['completion_note']}"
+            events.append({"time": frame["finished_at"], "label": "Frame update", "detail": detail})
+    events.sort(key=lambda event: event.get("time") or "")
+    return events[-40:]
 
 
 def find_frame(job_dir: Path, frame_number: int) -> tuple[Path, dict[str, Any]]:
@@ -847,6 +865,10 @@ def expand_c4d_output_path(job: dict[str, Any]) -> list[Path]:
 
 
 def rendered_frame_output_exists(job: dict[str, Any], frame_number: int, since: float | None = None) -> bool:
+    return find_rendered_frame_output(job, frame_number, since, min_age_seconds=0) is not None
+
+
+def find_rendered_frame_output(job: dict[str, Any], frame_number: int, since: float | None = None, min_age_seconds: float = 0) -> dict[str, Any] | None:
     earliest_output_time = since if since is not None else parse_utc(str(job.get("created_at", ""))) or 0.0
     frame_tokens = {
         f"{frame_number:04d}",
@@ -867,14 +889,84 @@ def rendered_frame_output_exists(job: dict[str, Any], frame_number: int, since: 
         for path in folder.iterdir():
             if path.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
-            if path.stat().st_size <= 0:
+            stat = path.stat()
+            if stat.st_size <= 0:
                 continue
-            if path.stat().st_mtime < earliest_output_time - 2:
+            if stat.st_mtime < earliest_output_time - 2:
+                continue
+            if min_age_seconds and time.time() - stat.st_mtime < min_age_seconds:
                 continue
             name = path.stem.lower()
             if any(token in name for token in frame_tokens):
-                return True
-    return False
+                return {
+                    "path": str(path),
+                    "size": stat.st_size,
+                    "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+                    "age_seconds": max(0.0, time.time() - stat.st_mtime),
+                }
+    return None
+
+
+def repair_job(job_dir: Path, stale_after_seconds: int = 600, min_output_age_seconds: float = 3) -> dict[str, Any]:
+    job = read_json(job_dir / "job.json")
+    since = parse_utc(str(job.get("created_at", ""))) or 0.0
+    repaired_outputs = 0
+    stale_failed = 0
+    changed = 0
+    for frame_path in sorted((job_dir / "frames").glob("*.json")):
+        with FileLock(frame_path.with_suffix(".lock")) as locked:
+            if not locked:
+                continue
+            frame = read_json(frame_path)
+            status = frame.get("status")
+            if status in {"done", "cancelled"}:
+                continue
+            output = find_rendered_frame_output(job, int(frame["frame"]), since, min_output_age_seconds)
+            if output and status in {"queued", "failed", "rendering"}:
+                frame["status"] = "done"
+                frame["output_file"] = output
+                frame["completion_note"] = "Output image found by queue repair."
+                frame["finished_at"] = frame.get("finished_at") or output["updated_at"]
+                frame["updated_at"] = utc_now()
+                write_json_atomic(frame_path, frame)
+                repaired_outputs += 1
+                changed += 1
+                continue
+            if status == "rendering" and frame_is_claimable(frame, stale_after_seconds):
+                frame["status"] = "failed"
+                frame["completion_note"] = "Rendering heartbeat went stale and no current output image was found."
+                frame["finished_at"] = frame.get("finished_at") or utc_now()
+                frame["updated_at"] = utc_now()
+                write_json_atomic(frame_path, frame)
+                stale_failed += 1
+                changed += 1
+    if changed:
+        update_job_status_from_frames(job_dir)
+    return {"job_id": job_dir.name, "changed": changed, "outputs": repaired_outputs, "stale_failed": stale_failed}
+
+
+def repair_queue(
+    share: Share,
+    job_id: str | None = None,
+    stale_after_seconds: int = 600,
+    min_output_age_seconds: float = 3,
+    active_only: bool = False,
+) -> dict[str, Any]:
+    results = []
+    for job_dir in list_jobs(share):
+        if job_id and job_dir.name != job_id:
+            continue
+        if active_only:
+            frame_statuses = [read_json(path).get("status") for path in (job_dir / "frames").glob("*.json")]
+            if "rendering" not in frame_statuses:
+                continue
+        results.append(repair_job(job_dir, stale_after_seconds, min_output_age_seconds))
+    return {
+        "jobs": results,
+        "changed": sum(result["changed"] for result in results),
+        "outputs": sum(result["outputs"] for result in results),
+        "stale_failed": sum(result["stale_failed"] for result in results),
+    }
 
 
 def find_frame_preview(share: Share, job_id: str, frame_number: int) -> dict[str, Any]:
@@ -1061,6 +1153,8 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
         active_job_status = job_statuses.get(active_job_id)
         worker["active_job_status"] = active_job_status
         worker["stale_active"] = bool(worker.get("active") and worker["state"] == "offline")
+        worker["current_code_signature"] = CODE_SIGNATURE
+        worker["code_current"] = worker.get("code_signature") == CODE_SIGNATURE
         if worker["state"] == "offline":
             worker["active"] = None
         workers.append(worker)
@@ -1081,12 +1175,15 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
                 },
                 "active_job_status": job_statuses.get(rendering_active["job_id"]),
                 "stale_active": False,
+                "current_code_signature": CODE_SIGNATURE,
+                "code_current": False,
             }
         )
     return workers
 
 
 def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, Any]:
+    repair_result = repair_queue(share, stale_after_seconds=600, min_output_age_seconds=3, active_only=True)
     workers = list_workers(share)
     active_job_ids = {
         worker["active"]["job_id"]
@@ -1120,6 +1217,8 @@ def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, An
         "share": str(share.root),
         "jobs": jobs,
         "workers": workers,
+        "code_signature": CODE_SIGNATURE,
+        "repair": repair_result,
     }
 
 

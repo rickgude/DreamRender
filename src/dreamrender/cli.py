@@ -17,6 +17,7 @@ from .queue import (
     list_jobs,
     parse_frames,
     render_frames,
+    repair_queue,
     requeue_failed,
     set_job_status,
     submit_job,
@@ -57,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     requeue = subparsers.add_parser("requeue-failed", help="Move failed frames back to queued.")
     requeue.add_argument("--share", required=True, type=Path)
     requeue.add_argument("--job-id")
+
+    repair = subparsers.add_parser("repair", help="Repair stale/rendered frame states in the queue.")
+    repair.add_argument("--share", required=True, type=Path)
+    repair.add_argument("--job-id")
 
     monitor = subparsers.add_parser("monitor", help="Run the DreamRender dashboard.")
     monitor.add_argument("--share", required=True, type=Path)
@@ -172,6 +177,16 @@ def cmd_requeue_failed(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_repair(args: argparse.Namespace) -> int:
+    result = repair_queue(Share(args.share), args.job_id, min_output_age_seconds=0)
+    print(
+        f"Repaired {result['changed']} frame(s): "
+        f"{result['outputs']} output-backed, {result['stale_failed']} stale failed.",
+        flush=True,
+    )
+    return 0
+
+
 def cmd_monitor(args: argparse.Namespace) -> int:
     from .monitor import run_monitor
 
@@ -210,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         "worker": cmd_worker,
         "status": cmd_status,
         "requeue-failed": cmd_requeue_failed,
+        "repair": cmd_repair,
         "monitor": cmd_monitor,
         "set-job-status": cmd_set_job_status,
         "doctor": cmd_doctor,

@@ -15,10 +15,12 @@ from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Canvas, Frame, PhotoI
 from tkinter import ttk
 
 from .queue import (
+    CODE_SIGNATURE,
     Share,
     clear_worker_stop_request,
     doctor_share,
     queue_snapshot,
+    repair_queue,
     request_worker_stop_after_batch,
     worker_stop_requested,
 )
@@ -442,6 +444,7 @@ class DreamRenderApp:
         controls = (
             ("Open Queue Folder", self.open_queue_folder, "App.TButton"),
             ("Desktop Shortcut", self.create_desktop_shortcut, "App.TButton"),
+            ("Repair Queue", self.repair_queue_now, "App.TButton"),
             ("Run Diagnostics", self.run_doctor, "App.TButton"),
             ("Stop All", self.stop_all, "Danger.TButton"),
         )
@@ -799,6 +802,14 @@ class DreamRenderApp:
         message = "\n".join(f"{'OK' if ok else 'FAIL'}  {label}: {detail}" for label, ok, detail in results)
         messagebox.showinfo("DreamRender Diagnostics", message)
 
+    def repair_queue_now(self) -> None:
+        result = repair_queue(Share(Path(self.share.get())), min_output_age_seconds=0)
+        self.status.set(f"Repaired {result['changed']} frame(s)")
+        self.add_log(
+            f"Repair queue: {result['changed']} frame(s), "
+            f"{result['outputs']} output-backed, {result['stale_failed']} stale failed"
+        )
+
     def init_queue(self, silent: bool = False) -> None:
         share = Share(Path(self.share.get()))
         try:
@@ -1089,6 +1100,13 @@ class DreamRenderApp:
             jobs = snapshot["jobs"]
             workers = snapshot["workers"]
             active = sum(1 for worker in workers if worker.get("state") == "online")
+            old_workers = sum(1 for worker in workers if not worker.get("code_current"))
+            repair = snapshot.get("repair", {})
+            health = f"Code: {CODE_SIGNATURE}"
+            if old_workers:
+                health += f"    Restart needed: {old_workers} worker(s)"
+            if repair.get("changed"):
+                health += f"    Auto-repaired: {repair['changed']} frame(s)"
             if jobs:
                 job = jobs[0]
                 stats = job.get("stats", {})
@@ -1098,11 +1116,12 @@ class DreamRenderApp:
                         f"Current job: {job['name']}    "
                         f"Progress: {job['progress']:.1f}%    "
                         f"Average: {stats.get('avg', '--')}    "
-                        f"ETA: {stats.get('eta', '--')}"
+                        f"ETA: {stats.get('eta', '--')}\n"
+                        f"{health}"
                     )
                 )
             else:
-                self.summary.config(text=f"Workers online: {active}    No queued jobs.")
+                self.summary.config(text=f"Workers online: {active}    No queued jobs.\n{health}")
         except Exception as exc:
             self.summary.config(text=f"Queue status unavailable: {exc}")
         self.root.after(2500, self.refresh_status)

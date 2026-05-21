@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .queue import Share, find_frame_preview, get_job_detail, queue_snapshot, read_frame_log, requeue_failed, requeue_frames, set_job_priorities, set_job_status
+from .queue import Share, find_frame_preview, get_job_detail, queue_snapshot, read_frame_log, repair_queue, requeue_failed, requeue_frames, set_job_priorities, set_job_status
 
 
 HTML = r"""<!doctype html>
@@ -231,8 +231,10 @@ HTML = r"""<!doctype html>
           <span class="legend-item"><span class="legend-swatch rendering"></span>Rendering</span>
           <span class="legend-item"><span class="legend-swatch failed"></span>Error</span>
           <span class="legend-item"><span class="legend-swatch queued"></span>Queued</span>
+          <button onclick="repairQueue()">Repair Queue</button>
         </div>
       </div>
+      <div id="health" class="subtle" style="margin: -4px 0 14px;"></div>
       <div id="jobs" class="jobs job-drop-list"></div>
     </section>
   </main>
@@ -262,6 +264,8 @@ HTML = r"""<!doctype html>
         <div>
           <h2>Preview</h2>
           <div id="detail-preview" class="subtle">Select a frame to view its output preview.</div>
+          <h2>Timeline</h2>
+          <pre id="detail-timeline" class="log-pane" style="min-height: 140px;">Open a job to view its timeline.</pre>
           <h2>Log</h2>
           <pre id="detail-log" class="log-pane">Select a frame to view its log.</pre>
         </div>
@@ -336,6 +340,12 @@ HTML = r"""<!doctype html>
       await refresh();
       await openDetail(selectedJobId, selectedFrame);
     }
+    async function repairQueue(jobId = "") {
+      const body = new URLSearchParams({ action: "repair", job_id: jobId });
+      await fetch("/api/action", { method: "POST", body });
+      await refresh();
+      if (selectedJobId) await openDetail(selectedJobId, selectedFrame);
+    }
     function frameClass(status) {
       return `frame ${status || "queued"}`;
     }
@@ -345,15 +355,17 @@ HTML = r"""<!doctype html>
     function frameTitle(frame) {
       const worker = frame.worker_id ? `, worker ${frame.worker_id}` : "";
       const chunk = frame.chunk_start && frame.chunk_end ? `, chunk ${frame.chunk_start}-${frame.chunk_end}` : "";
-      return `Frame ${frame.frame}: ${frame.status}${worker}${chunk}`;
+      const output = frame.output_file ? `\nOutput: ${frame.output_file.path}\nWritten: ${frame.output_file.updated_at}\nSize: ${frame.output_file.size} bytes` : "";
+      const note = frame.completion_note ? `\nNote: ${frame.completion_note}` : "";
+      return `Frame ${frame.frame}: ${frame.status}${worker}${chunk}${output}${note}`;
     }
     function activeLabel(active) {
       if (!active) return "";
-      if (active.start_frame && active.end_frame) return `job ${esc(active.job_id)}, frames ${esc(active.start_frame)}-${esc(active.end_frame)}`;
+      if (active.start_frame != null && active.end_frame != null) return `job ${esc(active.job_id)}, frames ${esc(active.start_frame)}-${esc(active.end_frame)}`;
       return `job ${esc(active.job_id)}, frame ${esc(active.frame)}`;
     }
     function workerLabel(worker) {
-      const code = worker.code_signature ? ` · code ${worker.code_signature}` : " · old worker";
+      const code = worker.code_current ? ` - code ${worker.code_signature}` : " - restart needed";
       if (worker.active) {
         const suffix = ["archived", "draining"].includes(worker.active_job_status) ? " (finishing current batch)" : "";
         if (worker.state === "heartbeat_lost") return `heartbeat lost, ${activeLabel(worker.active)}${code}`;
@@ -401,6 +413,7 @@ HTML = r"""<!doctype html>
       else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}')">Pause</button>`);
       if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}')">Stop After Batch</button>`);
       if (job.status !== "archived") actions.push(`<button onclick="action('archive','${job.id}')">Archive</button>`);
+      actions.push(`<button onclick="repairQueue('${job.id}')">Repair</button>`);
       if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}')">Requeue Failed</button>`);
       if (canCancel) actions.push(`<button onclick="action('cancel','${job.id}')">Cancel</button>`);
       return actions.join("");
@@ -547,6 +560,7 @@ HTML = r"""<!doctype html>
       document.getElementById("detail-frames").innerHTML = job.frames.map(f => `
         <div onclick="openFrameLog('${job.id}', ${f.frame})" title="${esc(frameTitle(f))}" class="${frameClass(f.status)} ${f.worker_id ? "worker-owned" : ""}" ${frameStyle(f)}>${esc(f.frame)}</div>
       `).join("");
+      document.getElementById("detail-timeline").textContent = (job.timeline || []).map(event => `${event.time}  ${event.label}: ${event.detail}`).join("\n") || "No timeline events yet.";
       if (frameNumber) await openFrameLog(jobId, frameNumber);
       document.getElementById("detail").showModal();
     }
@@ -583,6 +597,9 @@ HTML = r"""<!doctype html>
       currentJobOrder = data.jobs.map(job => job.id);
       document.getElementById("share").textContent = data.share;
       document.getElementById("updated").textContent = new Date(data.generated_at).toLocaleString();
+      const oldWorkers = data.workers.filter(worker => !worker.code_current);
+      const repair = data.repair || {};
+      document.getElementById("health").textContent = `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  Code: ${data.code_signature || "--"}${oldWorkers.length ? `  -  ${oldWorkers.length} worker(s) need restart.` : ""}`;
       document.getElementById("workers").innerHTML = data.workers.length ? data.workers.map(w => `
         <div class="worker" style="--worker-color:${workerColor(w.worker_id)}">
           <span class="dot ${w.state === "online" ? "online" : ""} ${w.state === "heartbeat_lost" ? "heartbeat-lost" : ""}" style="--worker-color:${workerColor(w.worker_id)}"></span>
@@ -670,6 +687,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self.send_json({"ok": True})
             return
         job_id = values.get("job_id", [""])[0]
+        if action == "repair":
+            result = repair_queue(self.share, job_id or None, min_output_age_seconds=0)
+            self.send_json({"ok": True, "repair": result})
+            return
         if not job_id:
             self.send_error(HTTPStatus.BAD_REQUEST, "Missing job_id")
             return
