@@ -20,8 +20,10 @@ fn main() {
 
     tauri::Builder::default()
         .setup(move |_app| {
-            let child = start_python_backend().map_err(|error| error.to_string())?;
-            *backend_for_setup.lock().map_err(|error| error.to_string())? = Some(child);
+            if !backend_is_ready() {
+                let child = start_python_backend().map_err(|error| error.to_string())?;
+                *backend_for_setup.lock().map_err(|error| error.to_string())? = Some(child);
+            }
             wait_for_backend(Duration::from_secs(8));
             Ok(())
         })
@@ -103,11 +105,15 @@ fn find_python(repo_root: &PathBuf) -> Option<String> {
 fn wait_for_backend(timeout: Duration) {
     let started = Instant::now();
     while started.elapsed() < timeout {
-        if std::net::TcpStream::connect("127.0.0.1:8777").is_ok() {
+        if backend_is_ready() {
             return;
         }
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn backend_is_ready() -> bool {
+    std::net::TcpStream::connect("127.0.0.1:8777").is_ok()
 }
 
 fn stop_backend_services() {

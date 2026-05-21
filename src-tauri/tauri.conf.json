@@ -4,6 +4,7 @@
   "version": "0.1.2",
   "identifier": "com.dreamrender.app",
   "build": {
+    "beforeDevCommand": "npm run app:v2:no-browser",
     "frontendDist": "../src/dreamrender/app_v2_static",
     "devUrl": "http://127.0.0.1:8777"
   },

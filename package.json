@@ -5,6 +5,7 @@
   "description": "DreamRender desktop shell.",
   "scripts": {
     "app:v2": "python -m dreamrender app-v2",
+    "app:v2:no-browser": "python -c \"import sys; sys.path.insert(0, 'src'); from dreamrender.cli import main; raise SystemExit(main())\" app-v2 --no-browser",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
