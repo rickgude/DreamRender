@@ -392,6 +392,26 @@ def heartbeat_worker(share: Share, worker_id: str, active: dict[str, Any] | None
     )
 
 
+def worker_stop_request_path(share: Share, worker_id: str) -> Path:
+    return share.workers_dir / f"{worker_id}.stop"
+
+
+def request_worker_stop_after_batch(share: Share, worker_id: str) -> None:
+    share.workers_dir.mkdir(parents=True, exist_ok=True)
+    worker_stop_request_path(share, worker_id).write_text(utc_now() + "\n", encoding="utf-8")
+
+
+def clear_worker_stop_request(share: Share, worker_id: str) -> None:
+    try:
+        worker_stop_request_path(share, worker_id).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def worker_stop_requested(share: Share, worker_id: str) -> bool:
+    return worker_stop_request_path(share, worker_id).exists()
+
+
 def read_job_status(job_dir: Path) -> str:
     try:
         return str(read_json(job_dir / "job.json").get("status", "queued"))

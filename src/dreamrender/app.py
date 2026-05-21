@@ -12,7 +12,14 @@ from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, Frame, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import ttk
 
-from .queue import Share, doctor_share, queue_snapshot
+from .queue import (
+    Share,
+    clear_worker_stop_request,
+    doctor_share,
+    queue_snapshot,
+    request_worker_stop_after_batch,
+    worker_stop_requested,
+)
 
 
 CONFIG_PATH = Path.home() / "DreamRenderApp.json"
@@ -46,6 +53,7 @@ class DreamRenderApp:
         self.chunk_size = StringVar(value=str(config.get("chunk_size", 5)))
         self.monitor_port = StringVar(value=str(config.get("monitor_port", 8766)))
         self.keep_worker_running = BooleanVar(value=bool(config.get("keep_worker_running", True)))
+        self.quit_after_batch = BooleanVar(value=False)
         self.status = StringVar(value="Ready")
         self.worker_state = StringVar(value="Worker: stopped")
         self.monitor_state = StringVar(value="Monitor: stopped")
@@ -105,6 +113,7 @@ class DreamRenderApp:
 
         actions = self.card(left, "Controls")
         actions.pack(fill=X)
+        ttk.Checkbutton(actions, text="Quit After Batch", variable=self.quit_after_batch, command=self.toggle_quit_after_batch, style="App.TCheckbutton").pack(anchor="w", pady=(0, 12))
         controls_grid = ttk.Frame(actions, style="Card.TFrame")
         controls_grid.pack(fill=X)
         controls = (
@@ -288,6 +297,8 @@ class DreamRenderApp:
             else:
                 messagebox.showerror("DreamRender", f"Cinema 4D Commandline.exe was not found:\n{c4d}")
             return
+        clear_worker_stop_request(Share(share), self.worker_id.get())
+        self.quit_after_batch.set(False)
         command = self.python_command() + [
             "worker",
             "--share",
@@ -340,6 +351,8 @@ class DreamRenderApp:
 
     def stop_worker(self) -> None:
         self.worker_should_run = False
+        clear_worker_stop_request(Share(Path(self.share.get())), self.worker_id.get())
+        self.quit_after_batch.set(False)
         if self.worker_process and self.worker_process.poll() is None:
             self.stop_process_tree(self.worker_process)
             self.status.set("Worker stopped")
@@ -350,6 +363,19 @@ class DreamRenderApp:
         self.adopted_worker_pid = None
         self.worker_state.set("Worker: stopped")
         self.update_start_button()
+
+    def toggle_quit_after_batch(self) -> None:
+        share = Share(Path(self.share.get()))
+        worker_id = self.worker_id.get()
+        if self.quit_after_batch.get():
+            request_worker_stop_after_batch(share, worker_id)
+            self.worker_should_run = False
+            self.status.set("Worker will quit after the current batch")
+            self.add_log("Quit-after-batch requested")
+        else:
+            clear_worker_stop_request(share, worker_id)
+            self.status.set("Quit-after-batch cancelled")
+            self.add_log("Quit-after-batch cancelled")
 
     def start_monitor(self, open_browser: bool = True) -> None:
         if self.monitor_process and self.monitor_process.poll() is None:
@@ -563,6 +589,7 @@ class DreamRenderApp:
             elif self.monitor_is_reachable():
                 self.monitor_state.set(f"Monitor: running on port {self.monitor_port.get()}")
             self.update_start_button()
+            self.quit_after_batch.set(worker_stop_requested(Share(Path(self.share.get())), self.worker_id.get()))
             snapshot = queue_snapshot(Share(Path(self.share.get())))
             jobs = snapshot["jobs"]
             workers = snapshot["workers"]
@@ -588,6 +615,7 @@ class DreamRenderApp:
     def close(self) -> None:
         self.persist()
         self.worker_should_run = False
+        clear_worker_stop_request(Share(Path(self.share.get())), self.worker_id.get())
         if self.worker_process and self.worker_process.poll() is None:
             self.stop_process_tree(self.worker_process)
         elif self.adopted_worker_pid is not None and self.process_exists(self.adopted_worker_pid):

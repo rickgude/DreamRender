@@ -11,6 +11,7 @@ from .queue import (
     Share,
     ShareAccessError,
     claim_next_frames,
+    clear_worker_stop_request,
     doctor_share,
     heartbeat_worker,
     list_jobs,
@@ -20,6 +21,7 @@ from .queue import (
     set_job_status,
     submit_job,
     summarize_job,
+    worker_stop_requested,
 )
 
 
@@ -106,6 +108,10 @@ def cmd_worker(args: argparse.Namespace) -> int:
     try:
         print(f"DreamRender worker '{worker_id}' watching {share.root}", flush=True)
         while True:
+            if worker_stop_requested(share, worker_id):
+                print("Quit-after-batch requested. Worker is stopping before claiming new frames.", flush=True)
+                clear_worker_stop_request(share, worker_id)
+                return 0
             heartbeat_worker(share, worker_id)
             claim = claim_next_frames(share, worker_id, args.stale_seconds, args.chunk_size)
             if claim is None:
@@ -130,6 +136,10 @@ def cmd_worker(args: argparse.Namespace) -> int:
                 frame_paths=frame_paths,
                 heartbeat_interval=args.heartbeat_seconds,
             )
+            if worker_stop_requested(share, worker_id):
+                print("Quit-after-batch requested. Worker stopped after finishing the current batch.", flush=True)
+                clear_worker_stop_request(share, worker_id)
+                return 0
             if args.once:
                 return 0
     except ShareAccessError as exc:
