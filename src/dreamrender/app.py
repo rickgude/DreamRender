@@ -246,7 +246,6 @@ class DreamRenderApp:
         self.init_queue(silent=True)
         self.start_monitor(open_browser=False)
         self.start_worker()
-        self.open_dashboard()
 
     def start_worker(self, auto_restart: bool = False) -> None:
         if self.worker_is_running():
