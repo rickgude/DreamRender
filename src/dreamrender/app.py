@@ -70,29 +70,29 @@ class RoundedCard(Frame):
         height = max(1, self.winfo_height())
         radius = min(self.radius, width // 2, height // 2)
         self.canvas.delete("card")
-        self.canvas.create_polygon(
+        diameter = radius * 2
+        self.canvas.create_rectangle(
             radius,
             0,
             width - radius,
-            0,
-            width,
-            radius,
-            width,
-            height - radius,
-            width - radius,
             height,
-            radius,
-            height,
-            0,
-            height - radius,
-            0,
-            radius,
-            smooth=True,
-            splinesteps=20,
             fill=self.fill,
             outline=self.fill,
             tags="card",
         )
+        self.canvas.create_rectangle(
+            0,
+            radius,
+            width,
+            height - radius,
+            fill=self.fill,
+            outline=self.fill,
+            tags="card",
+        )
+        self.canvas.create_arc(0, 0, diameter, diameter, start=90, extent=90, fill=self.fill, outline=self.fill, tags="card")
+        self.canvas.create_arc(width - diameter, 0, width, diameter, start=0, extent=90, fill=self.fill, outline=self.fill, tags="card")
+        self.canvas.create_arc(width - diameter, height - diameter, width, height, start=270, extent=90, fill=self.fill, outline=self.fill, tags="card")
+        self.canvas.create_arc(0, height - diameter, diameter, height, start=180, extent=90, fill=self.fill, outline=self.fill, tags="card")
         self.canvas.coords(self.window_id, self.padding, self.padding)
         self.canvas.itemconfigure(
             self.window_id,
