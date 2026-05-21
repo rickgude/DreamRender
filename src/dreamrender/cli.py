@@ -78,7 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Check whether this machine can use the DreamRender share.")
     doctor.add_argument("--share", required=True, type=Path)
 
-    app = subparsers.add_parser("app", help="Launch the DreamRender desktop control panel.")
+    app = subparsers.add_parser("app", help="Launch the DreamRender classic desktop control panel.")
+
+    app_v2 = subparsers.add_parser("app-v2", help="Launch the DreamRender App v2 UI.")
+    app_v2.add_argument("--host", default="127.0.0.1")
+    app_v2.add_argument("--port", type=int, default=8777)
+    app_v2.add_argument("--no-browser", action="store_true")
 
     return parser
 
@@ -222,6 +227,13 @@ def cmd_app(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_app_v2(args: argparse.Namespace) -> int:
+    from .app_v2 import run_app_v2
+
+    run_app_v2(args.host, args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -236,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         "set-job-status": cmd_set_job_status,
         "doctor": cmd_doctor,
         "app": cmd_app,
+        "app-v2": cmd_app_v2,
     }
     return handlers[args.command](args)
 

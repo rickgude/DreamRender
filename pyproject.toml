@@ -19,4 +19,4 @@ dreamrender = "dreamrender.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-dreamrender = ["py.typed"]
+dreamrender = ["py.typed", "app_v2_static/*"]

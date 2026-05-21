@@ -8,8 +8,7 @@ Use the no-console launcher for normal installation and daily work:
 
 Use this almost always.
 
-It opens the DreamRender App without showing a console window. From there you
-can:
+It opens DreamRender App v2 without showing a console window. From there you can:
 
 - run Quick Setup
 - choose the shared queue folder
@@ -22,7 +21,8 @@ If you are unsure, use this.
 
 ### `START_DreamRender_App.bat`
 
-Fallback launcher for troubleshooting only. It may show a console window.
+Fallback launcher for the classic Tkinter control panel. Use it only for
+troubleshooting while App v2 is being finished. It may show a console window.
 
 ### `INSTALL_Cinema4D_Plugin_2026.bat`
 

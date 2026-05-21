@@ -15,6 +15,9 @@ New install? Follow the artist-friendly guide:
 
 **[Install DreamRender](INSTALL.md)**
 
+DreamRender is moving to a cleaner App v2 interface. See
+**[DreamRender App v2](APP_V2.md)** for the UI migration path.
+
 That guide covers:
 
 - installing regular Python
@@ -67,10 +70,10 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Which Script Should I Use?
 
-Use `START_DreamRender_App.vbs` for normal work. It opens the polished
-DreamRender App without showing a console window. The app can start DreamRender,
-open the dashboard, run diagnostics, open the queue folder, install the Cinema
-4D plugin, and create a desktop shortcut from one place.
+Use `START_DreamRender_App.vbs` for normal work. It opens DreamRender App v2
+without showing a console window. App v2 is the modern UI layer; it keeps the
+proven Python renderfarm engine underneath, but replaces the old Tkinter control
+panel with a cleaner, faster web-style interface.
 
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you deliberately want a visible

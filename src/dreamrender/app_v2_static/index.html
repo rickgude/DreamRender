@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DreamRender App</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>DreamRender</h1>
+        <p>Small-studio render farm control for Cinema 4D, Redshift, and Octane.</p>
+      </div>
+      <div class="top-actions">
+        <button id="toggle" class="primary">Start DreamRender</button>
+        <button id="dashboard">Open Dashboard</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="DreamRender app sections">
+      <button class="tab active" data-tab="setup">Setup</button>
+      <button class="tab" data-tab="activity">Activity</button>
+    </nav>
+
+    <section id="setup" class="tab-panel active">
+      <div class="status-grid">
+        <article class="card stat"><span>Worker</span><strong id="worker-state">Stopped</strong></article>
+        <article class="card stat"><span>Monitor</span><strong id="monitor-state">Stopped</strong></article>
+        <article class="card stat"><span>Status</span><strong id="app-status">Ready</strong></article>
+      </div>
+
+      <div class="setup-grid">
+        <section class="card stack">
+          <div class="card-head">
+            <h2>Onboarding</h2>
+          </div>
+          <p class="body-copy">Use this machine as a DreamRender node. Set the queue, confirm Cinema 4D, install the plugin, then start rendering.</p>
+          <div class="button-row">
+            <button class="primary" id="install-plugin">Install C4D Plugin</button>
+            <button id="open-queue">Open Queue Folder</button>
+          </div>
+        </section>
+
+        <section class="card stack">
+          <div class="card-head">
+            <h2>Setup</h2>
+            <button id="save-config">Save</button>
+          </div>
+          <label>Queue <input id="share"></label>
+          <label>Cinema 4D Commandline <input id="c4d"></label>
+          <label>Worker <input id="worker-id"></label>
+          <div class="two-col">
+            <label>Chunk Size <input id="chunk-size" type="number" min="1"></label>
+            <label>Monitor Port <input id="monitor-port" type="number" min="1"></label>
+          </div>
+          <label class="check"><input id="keep-worker" type="checkbox"> Keep worker running</label>
+        </section>
+
+        <section class="card stack">
+          <div class="card-head">
+            <h2>Health</h2>
+            <button id="repair">Repair Queue</button>
+          </div>
+          <div id="health" class="health-list"></div>
+        </section>
+
+        <section class="card stack">
+          <div class="card-head">
+            <h2>Queue</h2>
+          </div>
+          <div id="queue-summary" class="queue-summary">Loading...</div>
+        </section>
+      </div>
+    </section>
+
+    <section id="activity" class="tab-panel">
+      <section class="card stack">
+        <div class="card-head">
+          <h2>GPU Activity</h2>
+        </div>
+        <div id="gpus" class="gpu-list"></div>
+      </section>
+
+      <section class="card stack log-card">
+        <div class="card-head">
+          <h2>Worker Log</h2>
+          <button id="copy-log">Copy Log</button>
+        </div>
+        <textarea id="log" readonly spellcheck="false"></textarea>
+      </section>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

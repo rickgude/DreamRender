@@ -79,9 +79,9 @@ access are OK before you render.
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
-Use the app for normal work. The `.vbs` launcher opens DreamRender without a
-console window. Only use scripts in `scripts\advanced` when you deliberately
-want a visible troubleshooting console.
+Use the app for normal work. The `.vbs` launcher opens DreamRender App v2
+without a console window. Only use scripts in `scripts\advanced` when you
+deliberately want a visible troubleshooting console.
 
 ## 5. Install The Cinema 4D Plugin
 
