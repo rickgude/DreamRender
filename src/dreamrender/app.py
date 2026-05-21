@@ -123,15 +123,19 @@ class PillButton(Frame):
         self.active_fill = active_fill or fill
         self.current_fill = fill
         self.foreground = foreground
+        self.width = self.preferred_width()
         self.canvas = Canvas(self, height=40, background=canvas_bg, borderwidth=0, highlightthickness=0)
+        self.canvas.configure(width=self.width)
         self.canvas.pack(fill=BOTH, expand=True)
+        self.pack_propagate(False)
+        self.grid_propagate(False)
         self.canvas.bind("<Button-1>", self.invoke)
         self.canvas.bind("<Enter>", self.on_enter)
         self.canvas.bind("<Leave>", self.on_leave)
         self.canvas.bind("<Configure>", self.redraw)
         if self.textvariable is not None:
             self.textvariable.trace_add("write", lambda *_: self.on_text_changed())
-        self.configure(width=self.preferred_width(), height=40)
+        self.configure(width=self.width, height=40)
 
     def label(self) -> str:
         return self.textvariable.get() if self.textvariable is not None else self.text
@@ -140,7 +144,9 @@ class PillButton(Frame):
         return max(96, len(self.label()) * 8 + 34)
 
     def on_text_changed(self) -> None:
-        self.configure(width=self.preferred_width())
+        self.width = self.preferred_width()
+        self.configure(width=self.width)
+        self.canvas.configure(width=self.width)
         self.redraw()
 
     def on_enter(self, _event=None) -> None:
@@ -163,7 +169,7 @@ class PillButton(Frame):
             self.command()
 
     def redraw(self, _event=None) -> None:
-        width = max(self.preferred_width(), self.winfo_width())
+        width = max(self.width, self.winfo_width())
         height = max(38, self.winfo_height())
         self.canvas.delete("button")
         draw_rounded_rect(self.canvas, width, height, height // 2, self.current_fill, OUTLINE, "button")
@@ -244,11 +250,14 @@ class DreamRenderApp:
 
         content = ttk.Frame(outer, style="App.TFrame")
         content.pack(fill=BOTH, expand=True)
+        content.columnconfigure(0, minsize=430, weight=0)
+        content.columnconfigure(1, weight=1)
+        content.rowconfigure(0, weight=1)
 
         left = ttk.Frame(content, style="App.TFrame")
-        left.pack(side=LEFT, fill=BOTH, expand=False, padx=(0, 14))
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
         right = ttk.Frame(content, style="App.TFrame")
-        right.pack(side=LEFT, fill=BOTH, expand=True)
+        right.grid(row=0, column=1, sticky="nsew")
 
         setup = self.card(left, "Setup")
         setup.pack(fill=X, pady=(0, 14))
@@ -291,8 +300,8 @@ class DreamRenderApp:
                 padx=(0, 8) if column == 0 else (0, 0),
                 pady=(0, 8) if row < 1 else (0, 0),
             )
-        controls_grid.columnconfigure(0, weight=1)
-        controls_grid.columnconfigure(1, weight=1)
+        controls_grid.columnconfigure(0, weight=0)
+        controls_grid.columnconfigure(1, weight=0)
 
         queue_card = self.card(right, "Queue")
         queue_card.pack(fill=X, pady=(0, 14))
@@ -418,7 +427,7 @@ class DreamRenderApp:
         ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
         field = ttk.Frame(row, style="Card.TFrame")
         field.pack(fill=X, pady=(3, 0))
-        ttk.Entry(field, textvariable=variable, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
+        ttk.Entry(field, textvariable=variable, style="App.TEntry", width=34).pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
         self.pill_button(field, text="Browse", command=command).pack(side=RIGHT)
 
     def entry_row(self, parent: Frame, label: str, variable: StringVar) -> None:
@@ -426,7 +435,7 @@ class DreamRenderApp:
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill=X, pady=(0, 8))
         ttk.Label(row, text=label, style="Muted.TLabel").pack(anchor="w")
-        ttk.Entry(row, textvariable=variable, style="App.TEntry").pack(fill=X, pady=(3, 0))
+        ttk.Entry(row, textvariable=variable, style="App.TEntry", width=34).pack(fill=X, pady=(3, 0))
 
     def worker_row(self, parent: Frame) -> None:
         parent = self.card_content(parent)
@@ -435,7 +444,7 @@ class DreamRenderApp:
         ttk.Label(row, text="Worker", style="Muted.TLabel").pack(anchor="w")
         field = ttk.Frame(row, style="Card.TFrame")
         field.pack(fill=X, pady=(3, 0))
-        ttk.Entry(field, textvariable=self.worker_id, style="App.TEntry").pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
+        ttk.Entry(field, textvariable=self.worker_id, style="App.TEntry", width=34).pack(side=LEFT, fill=X, expand=True, padx=(0, 8))
         self.pill_button(field, text="Use Computer Name", command=self.use_computer_name).pack(side=RIGHT)
 
     def use_computer_name(self) -> None:
