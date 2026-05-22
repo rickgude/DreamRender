@@ -63,13 +63,6 @@ function showAppFeedback(tone, message) {
   element.textContent = message;
 }
 
-function clearAppFeedbackLater() {
-  window.clearTimeout(state.feedbackTimer);
-  state.feedbackTimer = window.setTimeout(() => {
-    if (!state.toggleBusy) $("#operation-result").hidden = true;
-  }, 4500);
-}
-
 function setToggleBusy(action) {
   state.toggleBusy = action;
   showAppFeedback("working", action === "start" ? "Starting DreamRender..." : "Stopping DreamRender...");
@@ -80,7 +73,6 @@ function clearToggleBusy(message) {
   state.toggleBusy = null;
   if (message) {
     showAppFeedback("ok", message);
-    clearAppFeedbackLater();
   }
   render(state.data || {});
 }
@@ -159,8 +151,6 @@ function render(data) {
   $("#toggle").classList.toggle("stop", Boolean(data.worker_running));
   $("#toggle").classList.toggle("is-loading", Boolean(busy));
   $("#toggle").disabled = Boolean(busy);
-  $("#dashboard").disabled = Boolean(busy) || !data.worker_running;
-  $("#dashboard").title = data.worker_running ? "Show the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
   $("#dashboard-tab").disabled = Boolean(busy) || !data.worker_running;
   $("#dashboard-tab").title = data.worker_running ? "Show the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
   if (!data.worker_running && $("#dashboard-panel").classList.contains("active")) selectTab("setup");
@@ -427,7 +417,6 @@ $("#toggle").addEventListener("click", async () => {
     render(state.data || {});
   }
 });
-$("#dashboard").addEventListener("click", () => selectTab("dashboard-panel"));
 $("#native-dashboard").addEventListener("click", async event => {
   const button = event.target.closest("[data-dashboard-action]");
   if (!button) return;
