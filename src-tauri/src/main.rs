@@ -94,12 +94,7 @@ fn find_python(repo_root: &PathBuf) -> Option<String> {
     if local_python.exists() {
         return Some(local_python.to_string_lossy().to_string());
     }
-    for candidate in [
-        r"C:\Python314\pythonw.exe",
-        r"C:\Python314\python.exe",
-        "pythonw",
-        "python",
-    ] {
+    for candidate in ["pythonw", "python"] {
         if Command::new(candidate).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
             return Some(candidate.to_string());
         }

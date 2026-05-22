@@ -6,12 +6,6 @@ if exist "%~dp0..\..\.venv\Scripts\python.exe" (
   exit /b 0
 )
 
-if exist "C:\Python314\python.exe" (
-  set "DREAMRENDER_PYTHON_EXE=C:\Python314\python.exe"
-  set "DREAMRENDER_PYTHON_ARGS="
-  exit /b 0
-)
-
 for /d %%P in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
   if exist "%%~fP\python.exe" (
     set "DREAMRENDER_PYTHON_EXE=%%~fP\python.exe"

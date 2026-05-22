@@ -1,6 +1,7 @@
-# DreamRender App v2
+# DreamRender App
 
-App v2 is the migration path away from the old Tkinter control panel.
+The current DreamRender app is the normal artist-facing control surface. The
+old Tkinter control panel is kept only as an advanced troubleshooting fallback.
 
 The renderfarm engine stays Python:
 
@@ -11,9 +12,8 @@ The renderfarm engine stays Python:
 - repair tools
 - GPU status
 
-The UI is now a modern local web app served by `dreamrender app-v2`. This gives
-DreamRender a much more stable layout and a cleaner path to a Tauri desktop
-shell later.
+The UI is a modern local web app served by `dreamrender app-v2` and displayed
+inside the Tauri desktop shell.
 
 ## Run
 
@@ -33,7 +33,7 @@ scripts\advanced\ADVANCED_Command_Line.bat app-v2
 
 ## Tauri Desktop Shell
 
-The repository now includes a Tauri shell in `src-tauri`.
+The repository includes a Tauri shell in `src-tauri`.
 
 For development:
 
@@ -51,7 +51,7 @@ The Tauri shell starts:
 python -m dreamrender app-v2 --no-browser
 ```
 
-Then it opens the App v2 interface in a native desktop window.
+Then it opens the DreamRender app interface in a native desktop window.
 
 ## Packaging Notes
 

@@ -11,7 +11,7 @@ if "%SHARE%"=="" set "SHARE=%ROOT%\DreamRenderShare"
 set "PYTHONPATH=%ROOT%\src"
 echo Advanced worker-only mode.
 echo.
-echo Normal users should start START_DreamRender_App.vbs instead.
+echo Normal users should start START_DREAMRENDER.vbs from the project root.
 echo This window must stay open while this machine renders.
 echo.
 echo Share: %SHARE%

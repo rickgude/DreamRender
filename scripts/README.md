@@ -1,6 +1,7 @@
 # DreamRender Scripts
 
-Use the no-console launcher in the project root for normal testing and daily work:
+Use the no-console launcher in the project root for normal testing and daily
+work:
 
 ## Normal Use
 
@@ -8,25 +9,15 @@ Use the no-console launcher in the project root for normal testing and daily wor
 
 Use this. Double-click it to open the native DreamRender app without a console.
 
-### `START_DreamRender_App.vbs`
-
-Legacy shortcut. It forwards to `..\START_DREAMRENDER.vbs`.
-
 From the app you can:
 
-- run Quick Setup
 - choose the shared queue folder
 - install the Cinema 4D plugin
 - start/stop DreamRender on this machine
-- open the dashboard
+- use the integrated dashboard
 - run diagnostics
 
 If you are unsure, use this.
-
-### `START_DreamRender_App.bat`
-
-Fallback launcher for the classic Tkinter control panel. Use it only for
-troubleshooting while App v2 is being finished. It may show a console window.
 
 ### `INSTALL_Cinema4D_Plugin_2026.bat`
 
@@ -45,13 +36,18 @@ Extensions > DreamRender Submit Render
 
 ## Advanced / Troubleshooting
 
-Advanced scripts are tucked away in `advanced\` so most users only see the two
-scripts they need.
+Advanced scripts are tucked away in `advanced\` so most users only see the
+normal launcher and optional plugin installer.
 
 ### `ADVANCED_Worker_Only_C4D2026.bat`
 
 Use only when you deliberately want a visible troubleshooting worker console.
 Normal artists should not need this.
+
+### `ADVANCED_Classic_App.bat`
+
+Use only if you need the old Tkinter control panel for troubleshooting. The
+normal app is `..\START_DREAMRENDER.vbs`.
 
 ### `ADVANCED_Monitor_Only.bat`
 

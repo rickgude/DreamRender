@@ -556,7 +556,7 @@ def run_app_v2(host: str = "127.0.0.1", port: int = 8777, open_browser: bool = T
     url = f"http://{host}:{port}/"
     if open_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
-    print(f"DreamRender App v2 running at {url}", flush=True)
+    print(f"DreamRender App running at {url}", flush=True)
     try:
         server.serve_forever()
     finally:

@@ -15,14 +15,13 @@ New install? Follow the artist-friendly guide:
 
 **[Install DreamRender](INSTALL.md)**
 
-DreamRender is moving to a cleaner App v2 interface. See
-**[DreamRender App v2](APP_V2.md)** for the UI migration path and Tauri desktop
-shell notes.
+DreamRender uses a clean desktop app shell. See **[DreamRender App](APP_V2.md)**
+for architecture and development notes.
 
 That guide covers:
 
 - installing regular Python
-- running the DreamRender app Quick Setup
+- setting up the DreamRender app
 - choosing the shared queue folder
 - installing the Cinema 4D plugin from the app
 - starting workers on render machines
@@ -33,7 +32,7 @@ That guide covers:
 
 - A Cinema 4D submitter plugin with a scene checker.
 - A desktop control app, so workers do not need command-line use.
-- A clean browser dashboard for jobs, takes, workers, progress, logs, previews,
+- An integrated dashboard for jobs, takes, workers, progress, logs, previews,
   frame ownership, and render statistics.
 - Frame batching, so heavy scenes do not reload for every single frame.
 - Marked-take submission, grouped in the dashboard.
@@ -64,14 +63,15 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 ## Day-To-Day Workflow
 
 1. Start `START_DREAMRENDER.vbs`.
-2. First time only: click `Quick Setup`.
-3. Make sure the `Health` panel is OK.
-4. Click `Start DreamRender` on every machine that should render.
-5. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
-6. Click `Check Scene`.
-7. Click `Submit Project`.
-8. Confirm `Save` when DreamRender asks to save the scene.
-9. Watch the dashboard.
+2. Set the shared queue folder and Cinema 4D Commandline path.
+3. Click `Install C4D Plugin` once per workstation.
+4. Make sure the `Health` panel is OK.
+5. Click `Start DreamRender` on every machine that should render.
+6. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
+7. Click `Check Scene`.
+8. Click `Submit Project`.
+9. Confirm `Save` when DreamRender asks to save the scene.
+10. Watch the integrated dashboard.
 
 ## Which Script Should I Use?
 

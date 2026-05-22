@@ -66,12 +66,11 @@ START_DREAMRENDER.vbs
 
 In the app:
 
-1. Click `Quick Setup`.
-2. Choose or create the DreamRender share folder.
-3. Let DreamRender detect Cinema 4D.
-4. Click `Install C4D Plugin` when prompted.
-5. Click `Start DreamRender` on every machine that should render.
-6. Click `Open Dashboard` when you want to watch the farm.
+1. Choose or create the DreamRender share folder.
+2. Confirm the Cinema 4D Commandline path.
+3. Click `Install C4D Plugin` on the workstation you submit from.
+4. Click `Start DreamRender` on every machine that should render.
+5. Open the `Dashboard` tab when you want to watch the farm.
 
 The `Health` panel should say the queue, Cinema 4D path, plugin, and queue
 access are OK before you render.
@@ -79,9 +78,9 @@ access are OK before you render.
 When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
-Use the app for normal work. The `.vbs` launcher opens DreamRender App v2
-without a console window. Only use scripts in `scripts\advanced` when you
-deliberately want a visible troubleshooting console.
+Use the app for normal work. The `.vbs` launcher opens DreamRender without a
+console window. Only use scripts in `scripts\advanced` when you deliberately
+want a visible troubleshooting console.
 
 ## 5. Install The Cinema 4D Plugin
 
