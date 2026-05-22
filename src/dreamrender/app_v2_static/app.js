@@ -42,6 +42,8 @@ function render(data) {
   const config = data.config || {};
   $("#toggle").textContent = data.worker_running ? "Stop DreamRender" : "Start DreamRender";
   $("#toggle").classList.toggle("stop", Boolean(data.worker_running));
+  $("#dashboard").disabled = !data.worker_running;
+  $("#dashboard").title = data.worker_running ? "Open the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
   $("#worker-state").textContent = data.worker_running ? `Running as ${config.worker_id}` : "Stopped";
   $("#monitor-state").textContent = data.monitor_running ? `Running on port ${config.monitor_port}` : "Stopped";
   $("#app-status").textContent = data.status || "Ready";
