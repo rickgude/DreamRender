@@ -59,6 +59,9 @@ p { margin: 8px 0 0; color: var(--muted); }
   gap: 12px;
   flex-wrap: wrap;
 }
+.top-actions {
+  justify-content: flex-end;
+}
 
 button {
   min-height: 42px;
@@ -74,6 +77,27 @@ button {
 button:hover { transform: translateY(-1px); border-color: #bfcac5; }
 button.primary { background: var(--ink); border-color: var(--ink); color: white; }
 button.stop { background: var(--good); border-color: var(--good); color: var(--ink); }
+button.is-loading {
+  position: relative;
+  padding-left: 48px;
+}
+button.is-loading::before {
+  content: "";
+  position: absolute;
+  left: 21px;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  margin-top: -7.5px;
+  border: 3px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: spin .75s linear infinite;
+}
+button.stop.is-loading::before {
+  border-color: rgba(14,14,13,.25);
+  border-top-color: var(--ink);
+}
 button:disabled {
   cursor: not-allowed;
   background: #e3e9e6;
@@ -86,6 +110,53 @@ button:disabled {
 button:disabled:hover {
   border-color: #d4ddd9;
   transform: none;
+}
+button.is-loading:disabled {
+  cursor: wait;
+  opacity: 1;
+}
+button.primary.is-loading:disabled {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: white;
+}
+button.stop.is-loading:disabled {
+  background: var(--good);
+  border-color: var(--good);
+  color: var(--ink);
+}
+
+.app-feedback {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 360px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8faf8;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(18, 22, 22, .05);
+}
+.app-feedback[hidden] {
+  display: none;
+}
+.app-feedback.working {
+  color: var(--ink);
+  background: rgba(139, 99, 246, .12);
+  border-color: rgba(139, 99, 246, .35);
+}
+.app-feedback.ok {
+  color: var(--ink);
+  background: rgba(101, 205, 139, .16);
+  border-color: rgba(101, 205, 139, .55);
+}
+.app-feedback.error {
+  color: var(--ink);
+  background: rgba(237, 120, 132, .16);
+  border-color: rgba(237, 120, 132, .55);
 }
 
 .tabs {
@@ -145,6 +216,9 @@ button:disabled:hover {
 .bento-card.drop-target {
   box-shadow: 0 0 0 3px rgba(139, 99, 246, .22), 0 12px 32px rgba(18, 22, 22, .08);
 }
+.bento-card.is-working {
+  box-shadow: 0 0 0 3px rgba(101, 205, 139, .18), 0 12px 32px rgba(18, 22, 22, .08);
+}
 .widget-top {
   display: flex;
   align-items: center;
@@ -156,18 +230,35 @@ button:disabled:hover {
   margin: 0;
 }
 .drag-handle {
-  min-height: 32px;
-  padding: 0 12px;
-  font-size: 11px;
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
   color: var(--muted);
   box-shadow: none;
   cursor: grab;
   user-select: none;
   touch-action: none;
+  position: relative;
+  font-size: 0;
+}
+.drag-handle::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  display: block;
+  margin: auto;
+  opacity: .82;
+  background:
+    radial-gradient(circle, var(--muted) 2px, transparent 2.5px) 0 0 / 9px 9px;
 }
 .drag-handle:active,
 .is-dragging-widget .drag-handle {
   cursor: grabbing;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .card {
