@@ -25,6 +25,7 @@ from .queue import (
     request_worker_stop_after_batch,
     request_worker_stop_now,
     requeue_failed,
+    set_job_priorities,
     set_job_status,
 )
 
@@ -408,6 +409,13 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 requeue_failed(self.state.share(), job_id)
             elif action == "open_output":
                 self.state.open_output_folder(job_id)
+            response_json(self, {"ok": True})
+        elif action == "reorder":
+            job_ids = payload.get("job_ids", [])
+            if not isinstance(job_ids, list) or not job_ids:
+                response_json(self, {"ok": False, "message": "Missing job order."}, HTTPStatus.BAD_REQUEST)
+                return
+            set_job_priorities(self.state.share(), [str(job_id) for job_id in job_ids])
             response_json(self, {"ok": True})
         elif action == "install_plugin":
             ok, message = self.state.install_plugin()

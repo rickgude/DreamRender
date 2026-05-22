@@ -1,9 +1,12 @@
 const state = {
   data: null,
   drag: null,
+  dashboardDrag: null,
   toggleBusy: null,
 };
 const layoutKey = "dreamrender.app.bentoLayout.v3";
+const expandedJobsKey = "dreamrender.app.expandedJobs.v1";
+const expandedJobs = new Set(JSON.parse(localStorage.getItem(expandedJobsKey) || "[]"));
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -33,6 +36,10 @@ function workerColor(workerId) {
 
 function statusText(counts) {
   return Object.entries(counts || {}).sort().map(([key, value]) => `${key}: ${value}`).join("  ");
+}
+
+function saveExpandedJobs() {
+  localStorage.setItem(expandedJobsKey, JSON.stringify([...expandedJobs]));
 }
 
 async function post(path, payload) {
@@ -209,6 +216,7 @@ function formatSeconds(seconds) {
 }
 
 function renderDashboard(queue, appData) {
+  if (state.dashboardDrag) return;
   const workers = queue.workers || [];
   const jobs = queue.jobs || [];
   const oldWorkers = workers.filter(worker => !worker.code_current);
@@ -245,6 +253,7 @@ function renderDashboard(queue, appData) {
 }
 
 function renderDashboardJob(job) {
+  const collapsed = !expandedJobs.has(job.id);
   const [statusClass, statusLabel] = jobState(job);
   const color = statusColors[statusClass] || statusColors.queued;
   const counts = job.counts || {};
@@ -262,10 +271,11 @@ function renderDashboardJob(job) {
   if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button data-dashboard-action="requeue" data-job="${esc(job.id)}">Requeue Failed</button>`);
   if (canCancel) actions.push(`<button data-dashboard-action="cancel" data-job="${esc(job.id)}">Cancel</button>`);
   if (job.status !== "archived") actions.push(`<button data-dashboard-action="delete" data-job="${esc(job.id)}">Delete</button>`);
-  return `<article class="dashboard-job" style="--status-color:${color}">
-    <div class="dashboard-job-main">
+  return `<article class="dashboard-job ${collapsed ? "collapsed" : ""}" style="--status-color:${color}" data-job-id="${esc(job.id)}">
+    <div class="dashboard-job-main" data-dashboard-toggle="${esc(job.id)}">
       <div>
         <div class="dashboard-job-title">
+          <button class="dashboard-job-drag" title="Move job priority" aria-label="Move job priority"></button>
           <span class="dashboard-status ${statusClass}">${esc(statusLabel)}</span>
           <strong>${esc(job.name)}</strong>
         </div>
@@ -274,7 +284,36 @@ function renderDashboardJob(job) {
       </div>
       <div class="dashboard-job-actions">${actions.join("")}</div>
     </div>
+    <div class="dashboard-job-body">
+      ${renderDashboardMetrics(job)}
+      <div class="dashboard-job-paths">
+        <div>${esc(job.scene || "")}</div>
+        <div>${esc(job.display_output || job.output || "")}</div>
+      </div>
+      ${renderDashboardFrames(job)}
+    </div>
   </article>`;
+}
+
+function renderDashboardMetrics(job) {
+  const stats = job.stats || {};
+  const items = [
+    ["Elapsed", stats.elapsed || "--"],
+    ["ETA", stats.eta || "--"],
+    ["Avg Frame", stats.avg || "--"],
+  ];
+  return `<div class="dashboard-metrics">${items.map(([label, value]) => `
+    <div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>
+  `).join("")}</div>`;
+}
+
+function renderDashboardFrames(job) {
+  const frames = job.frames || [];
+  if (!frames.length) return "";
+  return `<div class="dashboard-frames">${frames.map(frame => {
+    const worker = frame.worker_id ? ` style="--frame-color:${workerColor(frame.worker_id)}"` : "";
+    return `<span class="${esc(frame.status || "queued")} ${frame.worker_id ? "worker-owned" : ""}"${worker}>${esc(frame.frame)}</span>`;
+  }).join("")}</div>`;
 }
 
 function renderHealth(items) {
@@ -419,7 +458,17 @@ $("#toggle").addEventListener("click", async () => {
 });
 $("#native-dashboard").addEventListener("click", async event => {
   const button = event.target.closest("[data-dashboard-action]");
-  if (!button) return;
+  if (!button) {
+    const toggle = event.target.closest("[data-dashboard-toggle]");
+    if (toggle && !event.target.closest(".dashboard-job-drag")) {
+      const jobId = toggle.dataset.dashboardToggle;
+      if (expandedJobs.has(jobId)) expandedJobs.delete(jobId);
+      else expandedJobs.add(jobId);
+      saveExpandedJobs();
+      renderDashboard(state.data?.queue || {}, state.data || {});
+    }
+    return;
+  }
   button.disabled = true;
   button.classList.add("is-loading");
   try {
@@ -435,6 +484,64 @@ $("#native-dashboard").addEventListener("click", async event => {
     button.disabled = false;
     button.classList.remove("is-loading");
   }
+});
+
+$("#native-dashboard").addEventListener("pointerdown", event => {
+  const handle = event.target.closest(".dashboard-job-drag");
+  if (!handle) return;
+  const job = handle.closest(".dashboard-job");
+  const list = handle.closest(".dashboard-job-list");
+  if (!job || !list) return;
+  event.preventDefault();
+  event.stopPropagation();
+  handle.setPointerCapture(event.pointerId);
+  state.dashboardDrag = {
+    job,
+    list,
+    startY: event.clientY,
+    active: false,
+  };
+});
+
+document.addEventListener("pointermove", event => {
+  const drag = state.dashboardDrag;
+  if (!drag) return;
+  if (!drag.active && Math.abs(event.clientY - drag.startY) > 4) {
+    drag.active = true;
+    drag.job.classList.add("dragging");
+    drag.list.classList.add("is-reordering");
+  }
+  if (!drag.active) return;
+  drag.job.style.pointerEvents = "none";
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".dashboard-job");
+  drag.job.style.pointerEvents = "";
+  if (!target || target === drag.job || target.parentElement !== drag.list) return;
+  const rect = target.getBoundingClientRect();
+  drag.list.insertBefore(drag.job, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+});
+
+document.addEventListener("pointerup", async () => {
+  const drag = state.dashboardDrag;
+  if (!drag) return;
+  drag.job.classList.remove("dragging");
+  drag.list.classList.remove("is-reordering");
+  const jobIds = [...drag.list.querySelectorAll(".dashboard-job")].map(job => job.dataset.jobId);
+  const changed = drag.active;
+  state.dashboardDrag = null;
+  if (!changed) return;
+  try {
+    await post("/api/action", { action: "reorder", job_ids: jobIds });
+    await refresh();
+  } catch (error) {
+    showAppFeedback("error", error.message || "Could not reorder jobs.");
+  }
+});
+
+document.addEventListener("pointercancel", () => {
+  if (!state.dashboardDrag) return;
+  state.dashboardDrag.job.classList.remove("dragging");
+  state.dashboardDrag.list.classList.remove("is-reordering");
+  state.dashboardDrag = null;
 });
 $("#save-config").addEventListener("click", saveConfig);
 $("#repair").addEventListener("click", async () => {
