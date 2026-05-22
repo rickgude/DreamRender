@@ -111,29 +111,33 @@ button:disabled:hover {
 
 .bento-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-auto-flow: dense;
-  grid-auto-rows: minmax(118px, auto);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-areas:
+    "slot1 slot1 slot1 slot1 slot2 slot2 slot2 slot2 slot3 slot3 slot3 slot3"
+    "slot4 slot4 slot4 slot4 slot4 slot5 slot5 slot5 slot5 slot5 slot5 slot5"
+    "slot6 slot6 slot6 slot6 slot6 slot6 slot6 slot7 slot7 slot7 slot7 slot7";
+  grid-auto-rows: auto;
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
 }
 .bento-card {
   min-width: 0;
   transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
-.bento-card > .card-head,
-.bento-card.stat {
-  cursor: grab;
+.bento-grid[data-grid="setup"] .bento-card:nth-child(1) { grid-area: slot1; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(2) { grid-area: slot2; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(3) { grid-area: slot3; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(4) { grid-area: slot4; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(5) { grid-area: slot5; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(6) { grid-area: slot6; }
+.bento-grid[data-grid="setup"] .bento-card:nth-child(7) { grid-area: slot7; }
+.bento-grid[data-grid="activity"] {
+  grid-template-areas:
+    "slot1 slot1 slot1 slot1 slot1 slot1 slot1 slot1 slot1 slot1 slot1 slot1"
+    "slot2 slot2 slot2 slot2 slot2 slot2 slot2 slot2 slot2 slot2 slot2 slot2";
 }
-.bento-card.dragging,
-.bento-card.dragging > .card-head {
-  cursor: grabbing;
-}
-.bento-card[data-size="small"] { grid-column: span 2; }
-.bento-card[data-size="medium"] { grid-column: span 3; }
-.bento-card[data-size="wide"] { grid-column: span 4; }
-.bento-card[data-size="large"] { grid-column: span 3; grid-row: span 2; }
-.bento-card[data-size="full"] { grid-column: 1 / -1; }
+.bento-grid[data-grid="activity"] .bento-card:nth-child(1) { grid-area: slot1; }
+.bento-grid[data-grid="activity"] .bento-card:nth-child(2) { grid-area: slot2; }
 .bento-card.dragging {
   opacity: .42;
   transform: scale(.985);
@@ -151,12 +155,19 @@ button:disabled:hover {
 .widget-top span {
   margin: 0;
 }
-.widget-size {
+.drag-handle {
   min-height: 32px;
   padding: 0 12px;
   font-size: 11px;
   color: var(--muted);
   box-shadow: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.drag-handle:active,
+.is-dragging-widget .drag-handle {
+  cursor: grabbing;
 }
 
 .card {
@@ -334,14 +345,16 @@ textarea {
 @media (max-width: 980px) {
   .shell { width: calc(100vw - 20px); margin: 10px; }
   .topbar, .bento-grid { grid-template-columns: 1fr; }
+  .bento-grid,
+  .bento-grid[data-grid="activity"] {
+    grid-template-areas: none;
+  }
   .topbar { align-items: flex-start; flex-direction: column; }
   .bento-card,
-  .bento-card[data-size="small"],
-  .bento-card[data-size="medium"],
-  .bento-card[data-size="wide"],
-  .bento-card[data-size="large"],
-  .bento-card[data-size="full"] {
+  .bento-grid[data-grid="setup"] .bento-card:nth-child(n),
+  .bento-grid[data-grid="activity"] .bento-card:nth-child(n) {
     grid-column: 1;
+    grid-area: auto;
     grid-row: auto;
   }
   .two-col { grid-template-columns: 1fr; }

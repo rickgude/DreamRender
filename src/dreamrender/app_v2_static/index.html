@@ -26,23 +26,23 @@
 
     <section id="setup" class="tab-panel active">
       <div class="bento-grid" data-grid="setup">
-        <article class="card stat bento-card" data-widget="worker" data-size="small" draggable="true">
-          <div class="widget-top"><span>Worker</span><button class="widget-size" type="button">Size</button></div>
+        <article class="card stat bento-card" data-widget="worker">
+          <div class="widget-top"><span>Worker</span><button class="drag-handle" type="button" aria-label="Move Worker widget">Move</button></div>
           <strong id="worker-state">Stopped</strong>
         </article>
-        <article class="card stat bento-card" data-widget="monitor" data-size="small" draggable="true">
-          <div class="widget-top"><span>Monitor</span><button class="widget-size" type="button">Size</button></div>
+        <article class="card stat bento-card" data-widget="monitor">
+          <div class="widget-top"><span>Monitor</span><button class="drag-handle" type="button" aria-label="Move Monitor widget">Move</button></div>
           <strong id="monitor-state">Stopped</strong>
         </article>
-        <article class="card stat bento-card" data-widget="status" data-size="small" draggable="true">
-          <div class="widget-top"><span>Status</span><button class="widget-size" type="button">Size</button></div>
+        <article class="card stat bento-card" data-widget="status">
+          <div class="widget-top"><span>Status</span><button class="drag-handle" type="button" aria-label="Move Status widget">Move</button></div>
           <strong id="app-status">Ready</strong>
         </article>
 
-        <section class="card stack bento-card" data-widget="onboarding" data-size="wide" draggable="true">
+        <section class="card stack bento-card" data-widget="onboarding">
           <div class="card-head">
             <h2>Onboarding</h2>
-            <button class="widget-size" type="button">Size</button>
+            <button class="drag-handle" type="button" aria-label="Move Onboarding widget">Move</button>
           </div>
           <p class="body-copy">Use this machine as a DreamRender node. Set the queue, confirm Cinema 4D, install the plugin, then start rendering.</p>
           <div class="button-row">
@@ -52,11 +52,11 @@
           <div id="plugin-result" class="inline-message" hidden></div>
         </section>
 
-        <section class="card stack bento-card" data-widget="setup" data-size="large" draggable="true">
+        <section class="card stack bento-card" data-widget="setup">
           <div class="card-head">
             <h2>Setup</h2>
             <div class="card-actions">
-              <button class="widget-size" type="button">Size</button>
+              <button class="drag-handle" type="button" aria-label="Move Setup widget">Move</button>
               <button id="save-config">Save</button>
             </div>
           </div>
@@ -70,21 +70,21 @@
           <label class="check"><input id="keep-worker" type="checkbox"> Keep worker running</label>
         </section>
 
-        <section class="card stack bento-card" data-widget="health" data-size="wide" draggable="true">
+        <section class="card stack bento-card" data-widget="health">
           <div class="card-head">
             <h2>Health</h2>
             <div class="card-actions">
-              <button class="widget-size" type="button">Size</button>
+              <button class="drag-handle" type="button" aria-label="Move Health widget">Move</button>
               <button id="repair">Repair Queue</button>
             </div>
           </div>
           <div id="health" class="health-list"></div>
         </section>
 
-        <section class="card stack bento-card" data-widget="queue" data-size="medium" draggable="true">
+        <section class="card stack bento-card" data-widget="queue">
           <div class="card-head">
             <h2>Queue</h2>
-            <button class="widget-size" type="button">Size</button>
+            <button class="drag-handle" type="button" aria-label="Move Queue widget">Move</button>
           </div>
           <div id="queue-summary" class="queue-summary">Loading...</div>
         </section>
@@ -93,19 +93,19 @@
 
     <section id="activity" class="tab-panel">
       <div class="bento-grid" data-grid="activity">
-      <section class="card stack bento-card" data-widget="gpus" data-size="full" draggable="true">
+      <section class="card stack bento-card" data-widget="gpus">
         <div class="card-head">
           <h2>GPU Activity</h2>
-          <button class="widget-size" type="button">Size</button>
+          <button class="drag-handle" type="button" aria-label="Move GPU Activity widget">Move</button>
         </div>
         <div id="gpus" class="gpu-list"></div>
       </section>
 
-      <section class="card stack log-card bento-card" data-widget="log" data-size="full" draggable="true">
+      <section class="card stack log-card bento-card" data-widget="log">
         <div class="card-head">
           <h2>Worker Log</h2>
           <div class="card-actions">
-            <button class="widget-size" type="button">Size</button>
+            <button class="drag-handle" type="button" aria-label="Move Worker Log widget">Move</button>
             <button id="copy-log">Copy Log</button>
           </div>
         </div>

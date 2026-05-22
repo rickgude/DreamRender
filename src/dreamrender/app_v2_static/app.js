@@ -1,9 +1,8 @@
 const state = {
   data: null,
-  draggedCard: null,
+  drag: null,
 };
-const layoutKey = "dreamrender.app.bentoLayout.v1";
-const sizeSteps = ["small", "medium", "wide", "large", "full"];
+const layoutKey = "dreamrender.app.bentoLayout.v2";
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -47,10 +46,7 @@ function saveLayout() {
   const layout = {};
   document.querySelectorAll(".bento-grid").forEach(grid => {
     const gridName = grid.dataset.grid || "default";
-    layout[gridName] = {
-      order: [...grid.querySelectorAll(".bento-card")].map(card => card.dataset.widget),
-      sizes: Object.fromEntries([...grid.querySelectorAll(".bento-card")].map(card => [card.dataset.widget, card.dataset.size])),
-    };
+    layout[gridName] = [...grid.querySelectorAll(".bento-card")].map(card => card.dataset.widget);
   });
   localStorage.setItem(layoutKey, JSON.stringify(layout));
 }
@@ -59,28 +55,34 @@ function applySavedLayout() {
   const layout = loadLayout();
   document.querySelectorAll(".bento-grid").forEach(grid => {
     const gridName = grid.dataset.grid || "default";
-    const saved = layout[gridName] || {};
     const cards = new Map([...grid.querySelectorAll(".bento-card")].map(card => [card.dataset.widget, card]));
-    (saved.order || []).forEach(widget => {
+    (layout[gridName] || []).forEach(widget => {
       const card = cards.get(widget);
       if (card) grid.appendChild(card);
-    });
-    Object.entries(saved.sizes || {}).forEach(([widget, size]) => {
-      const card = cards.get(widget);
-      if (card && sizeSteps.includes(size)) card.dataset.size = size;
     });
   });
 }
 
-function cycleCardSize(card) {
-  const current = card.dataset.size || "medium";
-  const currentIndex = sizeSteps.indexOf(current);
-  card.dataset.size = sizeSteps[(currentIndex + 1) % sizeSteps.length] || "medium";
+function swapCards(first, second) {
+  const marker = document.createElement("div");
+  const parent = first.parentNode;
+  parent.insertBefore(marker, first);
+  second.parentNode.insertBefore(first, second);
+  parent.insertBefore(second, marker);
+  marker.remove();
   saveLayout();
 }
 
-function isInteractiveTarget(target) {
-  return Boolean(target.closest("button, input, textarea, label, select, a"));
+function cardFromPoint(x, y) {
+  const hidden = state.drag?.card;
+  if (hidden) hidden.style.pointerEvents = "none";
+  const target = document.elementFromPoint(x, y)?.closest(".bento-card");
+  if (hidden) hidden.style.pointerEvents = "";
+  return target;
+}
+
+function clearDropTarget() {
+  document.querySelectorAll(".drop-target").forEach(card => card.classList.remove("drop-target"));
 }
 
 async function refresh() {
@@ -178,13 +180,6 @@ async function saveConfig() {
 }
 
 document.addEventListener("click", async event => {
-  const sizeButton = event.target.closest(".widget-size");
-  if (sizeButton) {
-    const card = sizeButton.closest(".bento-card");
-    if (card) cycleCardSize(card);
-    return;
-  }
-
   const tab = event.target.closest(".tab");
   if (tab) {
     document.querySelectorAll(".tab").forEach(button => button.classList.remove("active"));
@@ -194,42 +189,58 @@ document.addEventListener("click", async event => {
   }
 });
 
-document.addEventListener("dragstart", event => {
-  const card = event.target.closest(".bento-card");
-  if (!card || isInteractiveTarget(event.target)) {
-    event.preventDefault();
-    return;
+document.addEventListener("pointerdown", event => {
+  const handle = event.target.closest(".drag-handle");
+  if (!handle) return;
+  const card = handle.closest(".bento-card");
+  if (!card) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  state.drag = {
+    card,
+    handle,
+    grid: card.parentElement,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+  };
+});
+
+document.addEventListener("pointermove", event => {
+  const drag = state.drag;
+  if (!drag) return;
+  const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (!drag.active && distance > 4) {
+    drag.active = true;
+    drag.card.classList.add("dragging");
+    document.body.classList.add("is-dragging-widget");
   }
-  state.draggedCard = card;
-  card.classList.add("dragging");
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", card.dataset.widget || "");
+  if (!drag.active) return;
+  clearDropTarget();
+  const target = cardFromPoint(event.clientX, event.clientY);
+  if (target && target !== drag.card && target.parentElement === drag.grid) {
+    target.classList.add("drop-target");
+  }
 });
 
-document.addEventListener("dragover", event => {
-  const target = event.target.closest(".bento-card");
-  if (!target || !state.draggedCard || target === state.draggedCard) return;
-  if (target.parentElement !== state.draggedCard.parentElement) return;
-  event.preventDefault();
-  document.querySelectorAll(".drop-target").forEach(card => card.classList.remove("drop-target"));
-  target.classList.add("drop-target");
+document.addEventListener("pointerup", event => {
+  const drag = state.drag;
+  if (!drag) return;
+  const target = cardFromPoint(event.clientX, event.clientY);
+  if (drag.active && target && target !== drag.card && target.parentElement === drag.grid) {
+    swapCards(drag.card, target);
+  }
+  drag.card.classList.remove("dragging");
+  document.body.classList.remove("is-dragging-widget");
+  clearDropTarget();
+  state.drag = null;
 });
 
-document.addEventListener("drop", event => {
-  const target = event.target.closest(".bento-card");
-  const dragged = state.draggedCard;
-  if (!target || !dragged || target === dragged || target.parentElement !== dragged.parentElement) return;
-  event.preventDefault();
-  const bounds = target.getBoundingClientRect();
-  const insertAfter = event.clientY > bounds.top + bounds.height / 2;
-  target.parentElement.insertBefore(dragged, insertAfter ? target.nextSibling : target);
-  saveLayout();
-});
-
-document.addEventListener("dragend", () => {
-  if (state.draggedCard) state.draggedCard.classList.remove("dragging");
-  state.draggedCard = null;
-  document.querySelectorAll(".drop-target").forEach(card => card.classList.remove("drop-target"));
+document.addEventListener("pointercancel", () => {
+  if (state.drag?.card) state.drag.card.classList.remove("dragging");
+  document.body.classList.remove("is-dragging-widget");
+  clearDropTarget();
+  state.drag = null;
 });
 
 $("#toggle").addEventListener("click", async () => {
