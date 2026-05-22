@@ -1,14 +1,18 @@
 # DreamRender Scripts
 
-Use the no-console launcher for normal installation and daily work:
+Use the no-console launcher in the project root for normal testing and daily work:
 
 ## Normal Use
 
+### `..\START_DREAMRENDER.vbs`
+
+Use this. Double-click it to open the native DreamRender app without a console.
+
 ### `START_DreamRender_App.vbs`
 
-Use this almost always.
+Legacy shortcut. It forwards to `..\START_DREAMRENDER.vbs`.
 
-It opens DreamRender App v2 without showing a console window. From there you can:
+From the app you can:
 
 - run Quick Setup
 - choose the shared queue folder

@@ -35,7 +35,7 @@ Add python.exe to PATH
 DreamRender workers should use regular Python. Do not use Cinema 4D `c4dpy.exe`
 for the worker.
 
-Quick check: double-click `scripts\START_DreamRender_App.vbs`. If the
+Quick check: double-click `START_DREAMRENDER.vbs`. If the
 DreamRender App opens, Python is ready.
 
 ## 3. Create The DreamRender Share
@@ -61,7 +61,7 @@ folder using the same paths that Cinema 4D uses.
 Double-click:
 
 ```text
-scripts\START_DreamRender_App.vbs
+START_DREAMRENDER.vbs
 ```
 
 In the app:
@@ -164,7 +164,7 @@ between machines.
 Use the DreamRender App launcher instead of typing `dreamrender` directly:
 
 ```bat
-scripts\START_DreamRender_App.vbs
+START_DREAMRENDER.vbs
 ```
 
 ### Python is not found

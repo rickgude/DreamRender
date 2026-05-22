@@ -59,7 +59,7 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Day-To-Day Workflow
 
-1. Start `scripts\START_DreamRender_App.vbs`.
+1. Start `START_DREAMRENDER.vbs`.
 2. First time only: click `Quick Setup`.
 3. Make sure the `Health` panel is OK.
 4. Click `Start DreamRender` on every machine that should render.
@@ -71,10 +71,9 @@ The queue folder can live on a NAS, a shared drive, or one of the machines.
 
 ## Which Script Should I Use?
 
-Use `START_DreamRender_App.vbs` for normal work. It opens DreamRender App v2
-without showing a console window. App v2 is the modern UI layer; it keeps the
-proven Python renderfarm engine underneath, but replaces the old Tkinter control
-panel with a cleaner, faster web-style interface.
+Use `START_DREAMRENDER.vbs` for normal work. It opens the native DreamRender app
+without showing a console window. The app keeps the proven Python renderfarm
+engine underneath, but gives artists one clean control surface.
 
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you deliberately want a visible
@@ -137,7 +136,7 @@ or automation.
 Run the app without a console:
 
 ```bat
-scripts\START_DreamRender_App.vbs
+START_DREAMRENDER.vbs
 ```
 
 The commands below are advanced troubleshooting fallbacks and may show a

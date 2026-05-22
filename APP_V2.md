@@ -20,10 +20,10 @@ shell later.
 Normal users should double-click:
 
 ```text
-scripts\START_DreamRender_App.vbs
+START_DREAMRENDER.vbs
 ```
 
-That launcher starts App v2 without a console window.
+That launcher starts the native DreamRender app without a console window.
 
 For development:
 
