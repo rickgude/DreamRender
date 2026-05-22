@@ -22,6 +22,16 @@ async function post(path, payload) {
   return data;
 }
 
+function showInlineMessage(selector, tone, title, detail) {
+  const element = $(selector);
+  element.hidden = false;
+  element.className = `inline-message ${tone}`;
+  element.innerHTML = `
+    <strong>${esc(title)}</strong>
+    ${detail ? `<span>${esc(detail)}</span>` : ""}
+  `;
+}
+
 async function refresh() {
   const data = await fetch("/api/state").then(response => response.json());
   state.data = data;
@@ -138,11 +148,18 @@ $("#repair").addEventListener("click", async () => {
 });
 $("#open-queue").addEventListener("click", () => post("/api/action", { action: "open_queue" }));
 $("#install-plugin").addEventListener("click", async () => {
+  const button = $("#install-plugin");
+  button.disabled = true;
+  button.textContent = "Installing...";
+  showInlineMessage("#plugin-result", "working", "Installing Cinema 4D plugin", "DreamRender is copying the submitter into your Cinema 4D preferences.");
   try {
     const result = await post("/api/action", { action: "install_plugin" });
-    alert(result.message || "Cinema 4D plugin installed.");
+    showInlineMessage("#plugin-result", "ok", "Cinema 4D plugin installed", result.message || "Restart Cinema 4D and open Extensions > DreamRender Submit Render.");
   } catch (error) {
-    alert(error.message);
+    showInlineMessage("#plugin-result", "error", "Plugin install failed", error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Install C4D Plugin";
   }
   await refresh();
 });

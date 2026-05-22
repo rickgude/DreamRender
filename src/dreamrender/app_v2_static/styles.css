@@ -74,6 +74,11 @@ button {
 button:hover { transform: translateY(-1px); border-color: #bfcac5; }
 button.primary { background: var(--ink); border-color: var(--ink); color: white; }
 button.stop { background: var(--good); border-color: var(--good); color: var(--ink); }
+button:disabled {
+  cursor: wait;
+  opacity: .7;
+  transform: none;
+}
 
 .tabs {
   display: flex;
@@ -142,6 +147,37 @@ button.stop { background: var(--good); border-color: var(--good); color: var(--i
 }
 .card-head h2 { margin-bottom: 0; }
 .body-copy { max-width: 60ch; line-height: 1.5; }
+
+.inline-message {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #f7faf8;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.inline-message strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+.inline-message span {
+  white-space: pre-line;
+}
+.inline-message.ok {
+  border-color: rgba(101, 205, 139, .65);
+  background: rgba(101, 205, 139, .14);
+}
+.inline-message.error {
+  border-color: rgba(237, 120, 132, .65);
+  background: rgba(237, 120, 132, .14);
+}
+.inline-message.working {
+  border-color: rgba(139, 99, 246, .45);
+  background: rgba(139, 99, 246, .10);
+}
 
 label {
   display: grid;

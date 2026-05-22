@@ -10,6 +10,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use tauri::{Manager, Url};
 
 struct BackendProcess(Arc<Mutex<Option<Child>>>);
 
@@ -19,12 +20,16 @@ fn main() {
     let backend_for_exit = backend.0.clone();
 
     tauri::Builder::default()
-        .setup(move |_app| {
+        .setup(move |app| {
             if !backend_is_ready() {
                 let child = start_python_backend().map_err(|error| error.to_string())?;
                 *backend_for_setup.lock().map_err(|error| error.to_string())? = Some(child);
             }
             wait_for_backend(Duration::from_secs(8));
+            if let Some(window) = app.get_webview_window("main") {
+                let url = Url::parse("http://127.0.0.1:8777").map_err(|error| error.to_string())?;
+                window.navigate(url).map_err(|error| error.to_string())?;
+            }
             Ok(())
         })
         .on_window_event(move |_window, event| {
