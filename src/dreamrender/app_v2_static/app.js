@@ -154,7 +154,9 @@ async function refresh() {
 function render(data) {
   const config = data.config || {};
   const busy = state.toggleBusy;
-  $("#toggle").textContent = busy ? (busy === "start" ? "Starting..." : "Stopping...") : (data.worker_running ? "Stop DreamRender" : "Start DreamRender");
+  const toggleLabel = busy ? (busy === "start" ? "Starting..." : "Stopping...") : (data.worker_running ? "Stop DreamRender" : "Start DreamRender");
+  $("#toggle").innerHTML = `<span class="toggle-switch" aria-hidden="true"><span></span></span><span>${esc(toggleLabel)}</span>`;
+  $("#toggle").setAttribute("aria-pressed", data.worker_running ? "true" : "false");
   $("#toggle").classList.toggle("stop", Boolean(data.worker_running));
   $("#toggle").classList.toggle("is-loading", Boolean(busy));
   $("#toggle").disabled = Boolean(busy);
@@ -193,14 +195,14 @@ function jobState(job) {
 }
 
 function workerLabel(worker) {
-  const code = worker.code_current ? `code ${worker.code_signature || ""}` : "restart needed";
   const active = worker.active || null;
   if (active) {
     const frameText = active.start_frame != null && active.end_frame != null ? `frames ${active.start_frame}-${active.end_frame}` : `frame ${active.frame}`;
-    return `job ${active.job_id}, ${frameText} - ${code}`;
+    return `job ${active.job_id}, ${frameText}`;
   }
-  if (worker.state === "online") return `idle - ${code}`;
-  if (worker.state === "heartbeat_lost") return `heartbeat lost - ${code}`;
+  if (worker.restart_requested) return "restart pending";
+  if (worker.state === "online") return "idle";
+  if (worker.state === "heartbeat_lost") return "heartbeat lost";
   return worker.last_seen_seconds == null ? "offline" : `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
 }
 
@@ -219,10 +221,9 @@ function renderDashboard(queue, appData) {
   if (state.dashboardDrag) return;
   const workers = queue.workers || [];
   const jobs = queue.jobs || [];
-  const oldWorkers = workers.filter(worker => !worker.code_current);
   const repair = queue.repair || {};
   $("#dashboard-health").textContent = appData.worker_running
-    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  Code: ${queue.code_signature || "--"}${oldWorkers.length ? ` - ${oldWorkers.length} worker(s) need restart.` : ""}`
+    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  Code: ${queue.code_signature || "--"}`
     : "Start DreamRender to view live workers and jobs.";
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
@@ -234,7 +235,7 @@ function renderDashboard(queue, appData) {
         <strong>${esc(worker.worker_id)}</strong>
         <div class="muted">${esc(workerLabel(worker))}</div>
         <div class="dashboard-worker-actions">
-          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current ? "Restart" : "Restart needed"}</button>
+          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.restart_requested ? "Restart needed" : "Restart"}</button>
           <button class="dashboard-toggle ${stopAfterBatch ? "active" : ""}" data-dashboard-action="worker_toggle_stop" data-worker="${esc(worker.worker_id)}" aria-pressed="${stopAfterBatch ? "true" : "false"}">
             <span></span>Stop after batch
           </button>
@@ -278,7 +279,7 @@ function renderDashboardJob(job) {
     <div class="dashboard-job-main" data-dashboard-toggle="${esc(job.id)}">
       <div>
         <div class="dashboard-job-title">
-          <button class="dashboard-job-drag drag-handle" type="button" draggable="true" title="Move job priority" aria-label="Move job priority"></button>
+          <button class="dashboard-job-drag drag-handle" type="button" title="Move job priority" aria-label="Move job priority"></button>
           <span class="dashboard-status ${statusClass}">${esc(statusLabel)}</span>
           <strong>${esc(job.name)}</strong>
         </div>
@@ -321,6 +322,27 @@ function renderDashboardFrames(job) {
 
 function dashboardJobIds(list) {
   return [...list.querySelectorAll(".dashboard-job")].map(job => job.dataset.jobId);
+}
+
+function dashboardJobFromPoint(x, y) {
+  const hidden = state.dashboardDrag?.job;
+  if (hidden) hidden.style.pointerEvents = "none";
+  const target = document.elementFromPoint(x, y)?.closest(".dashboard-job");
+  if (hidden) hidden.style.pointerEvents = "";
+  return target;
+}
+
+function clearDashboardDropTarget() {
+  document.querySelectorAll(".dashboard-job.drop-target").forEach(job => job.classList.remove("drop-target"));
+}
+
+function swapDashboardJobs(first, second) {
+  const marker = document.createElement("div");
+  const parent = first.parentNode;
+  parent.insertBefore(marker, first);
+  second.parentNode.insertBefore(first, second);
+  parent.insertBefore(second, marker);
+  marker.remove();
 }
 
 async function saveDashboardOrder(list) {
@@ -517,49 +539,6 @@ $("#native-dashboard").addEventListener("pointerdown", event => {
   };
 });
 
-$("#native-dashboard").addEventListener("dragstart", event => {
-  const handle = event.target.closest(".dashboard-job-drag");
-  if (!handle) return;
-  const job = handle.closest(".dashboard-job");
-  const list = handle.closest(".dashboard-job-list");
-  if (!job || !list) return;
-  state.dashboardDrag = { job, handle, list, active: true, native: true };
-  job.classList.add("dragging");
-  list.classList.add("is-reordering");
-  document.body.classList.add("is-dragging-dashboard");
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", job.dataset.jobId || "");
-});
-
-$("#native-dashboard").addEventListener("dragover", event => {
-  const drag = state.dashboardDrag;
-  if (!drag?.native) return;
-  event.preventDefault();
-  const target = event.target.closest(".dashboard-job");
-  if (!target || target === drag.job || target.parentElement !== drag.list) return;
-  const rect = target.getBoundingClientRect();
-  drag.list.insertBefore(drag.job, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
-});
-
-$("#native-dashboard").addEventListener("drop", event => {
-  if (state.dashboardDrag?.native) event.preventDefault();
-});
-
-$("#native-dashboard").addEventListener("dragend", async () => {
-  const drag = state.dashboardDrag;
-  if (!drag?.native) return;
-  drag.job.classList.remove("dragging");
-  drag.list.classList.remove("is-reordering");
-  document.body.classList.remove("is-dragging-dashboard");
-  const list = drag.list;
-  state.dashboardDrag = null;
-  try {
-    await saveDashboardOrder(list);
-  } catch (error) {
-    showAppFeedback("error", error.message || "Could not reorder jobs.");
-  }
-});
-
 document.addEventListener("pointermove", event => {
   const drag = state.dashboardDrag;
   if (!drag) return;
@@ -571,20 +550,24 @@ document.addEventListener("pointermove", event => {
     document.body.classList.add("is-dragging-dashboard");
   }
   if (!drag.active) return;
-  drag.job.style.pointerEvents = "none";
-  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".dashboard-job");
-  drag.job.style.pointerEvents = "";
-  if (!target || target === drag.job || target.parentElement !== drag.list) return;
-  const rect = target.getBoundingClientRect();
-  drag.list.insertBefore(drag.job, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  clearDashboardDropTarget();
+  const target = dashboardJobFromPoint(event.clientX, event.clientY);
+  if (target && target !== drag.job && target.parentElement === drag.list) {
+    target.classList.add("drop-target");
+  }
 });
 
-document.addEventListener("pointerup", async () => {
+document.addEventListener("pointerup", async event => {
   const drag = state.dashboardDrag;
   if (!drag) return;
+  const target = dashboardJobFromPoint(event.clientX, event.clientY);
+  if (drag.active && target && target !== drag.job && target.parentElement === drag.list) {
+    swapDashboardJobs(drag.job, target);
+  }
   drag.job.classList.remove("dragging");
   drag.list.classList.remove("is-reordering");
   document.body.classList.remove("is-dragging-dashboard");
+  clearDashboardDropTarget();
   const changed = drag.active;
   const list = drag.list;
   state.dashboardDrag = null;
@@ -601,6 +584,7 @@ document.addEventListener("pointercancel", () => {
   state.dashboardDrag.job.classList.remove("dragging");
   state.dashboardDrag.list.classList.remove("is-reordering");
   document.body.classList.remove("is-dragging-dashboard");
+  clearDashboardDropTarget();
   state.dashboardDrag = null;
 });
 $("#save-config").addEventListener("click", saveConfig);
