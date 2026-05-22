@@ -185,6 +185,15 @@ button.stop.is-loading:disabled {
   padding: 22px 30px 30px;
 }
 .tab-panel.active { display: block; }
+#dashboard-panel {
+  padding: 18px 0 0;
+}
+body.dashboard-active {
+  overflow: hidden;
+}
+body.dashboard-active .shell {
+  min-height: calc(100vh - 48px);
+}
 
 .bento-grid {
   display: grid;
@@ -447,14 +456,20 @@ textarea {
 
 .dashboard-card {
   position: relative;
-  min-height: calc(100vh - 210px);
+  min-height: calc(100vh - 226px);
   overflow: hidden;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--shell);
 }
 #dashboard-frame {
   display: block;
   width: 100%;
-  height: calc(100vh - 210px);
-  min-height: 720px;
+  height: calc(100vh - 226px);
+  min-height: 680px;
   border: 0;
   background: var(--shell);
 }

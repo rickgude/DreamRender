@@ -260,6 +260,32 @@ HTML = r"""<!doctype html>
     }
     .preview-note strong { display: block; margin-bottom: 6px; color: var(--text); }
     .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+    body.embedded {
+      padding: 0;
+      background: var(--shell);
+      overflow: auto;
+    }
+    body.embedded header {
+      display: none;
+    }
+    body.embedded main {
+      max-width: none;
+      min-height: 100vh;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    body.embedded aside {
+      padding: 22px 20px;
+    }
+    body.embedded section {
+      padding: 22px 26px;
+    }
+    body.embedded .job-group,
+    body.embedded .job {
+      box-shadow: none;
+    }
     @media (max-width: 820px) {
       body { padding: 10px; }
       main { grid-template-columns: 1fr; }
@@ -795,7 +821,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
         route = parsed.path
         query = parse_qs(parsed.query)
         if route == "/":
-            self.send_text(HTML, "text/html; charset=utf-8")
+            html = HTML.replace("<body>", '<body class="embedded">') if query.get("embed", ["0"])[0] == "1" else HTML
+            self.send_text(html, "text/html; charset=utf-8")
             return
         if route == "/api/snapshot":
             include_archived = query.get("archived", ["0"])[0] == "1"

@@ -123,6 +123,7 @@ function selectTab(tabId) {
   document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
   tab.classList.add("active");
   document.getElementById(tab.dataset.tab).classList.add("active");
+  document.body.classList.toggle("dashboard-active", tabId === "dashboard-panel");
 }
 
 async function refresh() {
@@ -175,7 +176,7 @@ function renderDashboard(data) {
     loading.querySelector("span").textContent = data.worker_running ? "The monitor is starting. This will only take a moment." : "Start DreamRender to view render jobs here.";
     return;
   }
-  const url = data.monitor_url || "";
+  const url = data.monitor_url ? `${data.monitor_url}?embed=1` : "";
   if (url && state.dashboardLoadedUrl !== url) {
     state.dashboardLoadedUrl = url;
     loading.hidden = false;
