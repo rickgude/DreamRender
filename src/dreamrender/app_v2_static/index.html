@@ -25,16 +25,24 @@
     </nav>
 
     <section id="setup" class="tab-panel active">
-      <div class="status-grid">
-        <article class="card stat"><span>Worker</span><strong id="worker-state">Stopped</strong></article>
-        <article class="card stat"><span>Monitor</span><strong id="monitor-state">Stopped</strong></article>
-        <article class="card stat"><span>Status</span><strong id="app-status">Ready</strong></article>
-      </div>
+      <div class="bento-grid" data-grid="setup">
+        <article class="card stat bento-card" data-widget="worker" data-size="small" draggable="true">
+          <div class="widget-top"><span>Worker</span><button class="widget-size" type="button">Size</button></div>
+          <strong id="worker-state">Stopped</strong>
+        </article>
+        <article class="card stat bento-card" data-widget="monitor" data-size="small" draggable="true">
+          <div class="widget-top"><span>Monitor</span><button class="widget-size" type="button">Size</button></div>
+          <strong id="monitor-state">Stopped</strong>
+        </article>
+        <article class="card stat bento-card" data-widget="status" data-size="small" draggable="true">
+          <div class="widget-top"><span>Status</span><button class="widget-size" type="button">Size</button></div>
+          <strong id="app-status">Ready</strong>
+        </article>
 
-      <div class="setup-grid">
-        <section class="card stack">
+        <section class="card stack bento-card" data-widget="onboarding" data-size="wide" draggable="true">
           <div class="card-head">
             <h2>Onboarding</h2>
+            <button class="widget-size" type="button">Size</button>
           </div>
           <p class="body-copy">Use this machine as a DreamRender node. Set the queue, confirm Cinema 4D, install the plugin, then start rendering.</p>
           <div class="button-row">
@@ -44,10 +52,13 @@
           <div id="plugin-result" class="inline-message" hidden></div>
         </section>
 
-        <section class="card stack">
+        <section class="card stack bento-card" data-widget="setup" data-size="large" draggable="true">
           <div class="card-head">
             <h2>Setup</h2>
-            <button id="save-config">Save</button>
+            <div class="card-actions">
+              <button class="widget-size" type="button">Size</button>
+              <button id="save-config">Save</button>
+            </div>
           </div>
           <label>Queue <input id="share"></label>
           <label>Cinema 4D Commandline <input id="c4d"></label>
@@ -59,17 +70,21 @@
           <label class="check"><input id="keep-worker" type="checkbox"> Keep worker running</label>
         </section>
 
-        <section class="card stack">
+        <section class="card stack bento-card" data-widget="health" data-size="wide" draggable="true">
           <div class="card-head">
             <h2>Health</h2>
-            <button id="repair">Repair Queue</button>
+            <div class="card-actions">
+              <button class="widget-size" type="button">Size</button>
+              <button id="repair">Repair Queue</button>
+            </div>
           </div>
           <div id="health" class="health-list"></div>
         </section>
 
-        <section class="card stack">
+        <section class="card stack bento-card" data-widget="queue" data-size="medium" draggable="true">
           <div class="card-head">
             <h2>Queue</h2>
+            <button class="widget-size" type="button">Size</button>
           </div>
           <div id="queue-summary" class="queue-summary">Loading...</div>
         </section>
@@ -77,20 +92,26 @@
     </section>
 
     <section id="activity" class="tab-panel">
-      <section class="card stack">
+      <div class="bento-grid" data-grid="activity">
+      <section class="card stack bento-card" data-widget="gpus" data-size="full" draggable="true">
         <div class="card-head">
           <h2>GPU Activity</h2>
+          <button class="widget-size" type="button">Size</button>
         </div>
         <div id="gpus" class="gpu-list"></div>
       </section>
 
-      <section class="card stack log-card">
+      <section class="card stack log-card bento-card" data-widget="log" data-size="full" draggable="true">
         <div class="card-head">
           <h2>Worker Log</h2>
-          <button id="copy-log">Copy Log</button>
+          <div class="card-actions">
+            <button class="widget-size" type="button">Size</button>
+            <button id="copy-log">Copy Log</button>
+          </div>
         </div>
         <textarea id="log" readonly spellcheck="false"></textarea>
       </section>
+      </div>
     </section>
   </main>
   <script src="/app.js"></script>
