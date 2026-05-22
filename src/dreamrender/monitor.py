@@ -184,14 +184,26 @@ HTML = r"""<!doctype html>
     .frame.failed { background: rgba(236, 108, 121, .20); border-color: rgba(236, 108, 121, .65); color: #96323d; }
     .frame.queued { background: #e8ede9; }
     .frame.worker-owned {
-      background: color-mix(in srgb, var(--worker-color) 28%, white);
+      background: var(--worker-soft, #e8ede9);
       border-color: transparent;
+      color: var(--ink);
+    }
+    .frame.done.worker-owned {
+      background: var(--worker-soft, #e8ede9);
+      border-color: var(--good);
+      box-shadow: inset 0 0 0 1px var(--good);
       color: var(--ink);
     }
     .frame.rendering.worker-owned {
       background: var(--worker-color);
       border-color: transparent;
       box-shadow: none;
+    }
+    .frame.failed.worker-owned {
+      background: var(--worker-soft, #e8ede9);
+      border-color: var(--bad);
+      box-shadow: inset 0 0 0 1px var(--bad);
+      color: var(--ink);
     }
     .empty { padding: 48px; text-align: center; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 24px; background: var(--panel); }
     dialog {
@@ -317,6 +329,16 @@ HTML = r"""<!doctype html>
     function workerColor(workerId) {
       return workerPalette[hashWorker(workerId) % workerPalette.length];
     }
+    function hexToRgb(hex) {
+      const clean = String(hex || "").replace("#", "");
+      const value = parseInt(clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean, 16);
+      if (Number.isNaN(value)) return [232, 237, 233];
+      return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+    }
+    function workerSoftColor(workerId, alpha = .34) {
+      const [r, g, b] = hexToRgb(workerColor(workerId));
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
     function saveCollapsedJobs() {
       localStorage.setItem("dreamrender.collapsedJobs", JSON.stringify([...collapsedJobs]));
     }
@@ -377,7 +399,7 @@ HTML = r"""<!doctype html>
       return `frame ${status || "queued"}`;
     }
     function frameStyle(frame) {
-      return frame.worker_id ? `style="--worker-color:${workerColor(frame.worker_id)}"` : "";
+      return frame.worker_id ? `style="--worker-color:${workerColor(frame.worker_id)};--worker-soft:${workerSoftColor(frame.worker_id)}"` : "";
     }
     function frameTitle(frame) {
       const worker = frame.worker_id ? `, worker ${frame.worker_id}` : "";
