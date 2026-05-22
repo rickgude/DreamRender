@@ -595,6 +595,8 @@ textarea {
 .dashboard-worker-actions {
   justify-content: flex-start;
   align-items: flex-start;
+  margin-left: -24px;
+  width: calc(100% + 24px);
 }
 .dashboard-worker-actions button {
   min-height: 28px;
