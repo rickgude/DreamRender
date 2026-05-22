@@ -18,6 +18,7 @@ from .queue import (
     repair_queue,
     request_worker_restart,
     request_worker_stop_after_batch,
+    request_worker_stop_now,
     requeue_failed,
     requeue_frames,
     set_job_priorities,
@@ -109,6 +110,7 @@ HTML = r"""<!doctype html>
     .dot.online { background: rgba(255,255,255,.95); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .dot.heartbeat-lost { background: var(--rendering); box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
     .jobs { display: grid; gap: 18px; }
+    .job-drop-list.is-reordering .job { transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease; }
     .job-group {
       background: #eef5f2; border: 1px solid #d8e4df; border-radius: 26px;
       padding: 24px; box-shadow: var(--soft-shadow);
@@ -120,6 +122,12 @@ HTML = r"""<!doctype html>
       background: #ffffff; border: 1px solid #dbe5e1; border-radius: 24px; overflow: hidden;
       box-shadow: 0 8px 22px rgba(18, 22, 22, .045);
     }
+    .job.dragging {
+      opacity: .78; transform: scale(.992); box-shadow: 0 18px 44px rgba(18,22,22,.16);
+      outline: 2px solid var(--ink); outline-offset: 4px;
+    }
+    .job.drop-before { transform: translateY(-4px); }
+    .job.drop-after { transform: translateY(4px); }
     .job-group .job { background: #ffffff; }
     .job-head { display: grid; grid-template-columns: 1fr auto; gap: 22px; padding: 24px 26px 22px; cursor: pointer; }
     .job-body { display: block; }
@@ -130,6 +138,14 @@ HTML = r"""<!doctype html>
     .job-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
     .job-title { font-size: 23px; font-weight: 900; margin-bottom: 5px; letter-spacing: 0; }
     .job-title-row .job-title { margin-bottom: 0; }
+    .job-drag-handle {
+      width: 34px; height: 34px; flex: 0 0 34px; padding: 0; cursor: grab;
+      background:
+        radial-gradient(circle, var(--ink) 1.7px, transparent 2px) 8px 9px / 8px 8px repeat,
+        #f8faf8;
+      border: 1px solid var(--line); box-shadow: 0 2px 7px rgba(18,22,22,.04);
+    }
+    .job-drag-handle:active { cursor: grabbing; }
     .job-status {
       display: inline-flex; align-items: center; min-height: 28px; padding: 4px 11px;
       border: 1px solid var(--line); border-radius: 999px; background: #e8ede9;
@@ -149,6 +165,19 @@ HTML = r"""<!doctype html>
       cursor: pointer; font-weight: 750; box-shadow: 0 2px 7px rgba(18,22,22,.05);
     }
     button:hover { border-color: var(--ink); transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .68; transform: none; }
+    button.is-loading { position: relative; color: transparent !important; pointer-events: none; }
+    button.is-loading::after {
+      content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px;
+      border: 2px solid currentColor; border-top-color: transparent; border-radius: 999px;
+      color: var(--ink); animation: spin .75s linear infinite;
+    }
+    button.is-loading:first-child::after, .actions button.is-loading:first-child::after, .group-head .actions button.is-loading:first-child::after {
+      color: white;
+    }
+    button.danger { background: #f8faf8; color: var(--ink); border-color: var(--line); }
+    button.danger:hover { border-color: var(--bad); color: #9d2935; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .actions button:first-child, .group-head .actions button:first-child { background: var(--ink); color: white; border-color: var(--ink); }
     .job-progress {
       width: min(740px, 48vw); max-width: 100%; height: 13px; margin-top: 6px;
@@ -263,8 +292,8 @@ HTML = r"""<!doctype html>
           <span class="legend-item"><span class="legend-swatch rendering"></span>Rendering</span>
           <span class="legend-item"><span class="legend-swatch failed"></span>Error</span>
           <span class="legend-item"><span class="legend-swatch queued"></span>Queued</span>
-          <button onclick="workerAction('worker_restart_outdated')">Restart Outdated Workers</button>
-          <button onclick="repairQueue()">Repair Queue</button>
+          <button onclick="workerAction('worker_restart_outdated', '', this)">Restart Outdated Workers</button>
+          <button onclick="repairQueue('', this)">Repair Queue</button>
         </div>
       </div>
       <div id="health" class="subtle" style="margin: -4px 0 14px;"></div>
@@ -281,13 +310,13 @@ HTML = r"""<!doctype html>
     </div>
     <div class="modal-body">
       <div class="detail-actions">
-        <button onclick="detailAction('pause')">Pause</button>
-        <button onclick="detailAction('resume')">Resume</button>
-        <button onclick="detailAction('drain')">Drain</button>
-        <button onclick="detailAction('cancel')">Cancel</button>
-        <button onclick="detailAction('archive')">Archive</button>
-        <button onclick="detailAction('requeue')">Requeue Failed</button>
-        <button onclick="requeueSelectedFrame()">Requeue Selected</button>
+        <button onclick="detailAction('pause', this)">Pause</button>
+        <button onclick="detailAction('resume', this)">Resume</button>
+        <button onclick="detailAction('drain', this)">Stop After Batch</button>
+        <button onclick="detailAction('cancel', this)">Cancel</button>
+        <button onclick="detailAction('requeue', this)">Requeue Failed</button>
+        <button onclick="requeueSelectedFrame(this)">Requeue Selected</button>
+        <button class="danger" onclick="detailAction('archive', this)">Delete</button>
       </div>
       <div class="modal-grid">
         <div>
@@ -309,6 +338,8 @@ HTML = r"""<!doctype html>
     let selectedJobId = null;
     let selectedFrame = null;
     let currentJobOrder = [];
+    let isDraggingJob = false;
+    let jobDrag = null;
     const collapsedJobs = new Set(JSON.parse(localStorage.getItem("dreamrender.collapsedJobs") || "[]"));
     const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -348,52 +379,116 @@ HTML = r"""<!doctype html>
       saveCollapsedJobs();
       refresh();
     }
-    async function action(kind, jobId) {
-      const body = new URLSearchParams({ action: kind, job_id: jobId });
-      await fetch("/api/action", { method: "POST", body });
-      await refresh();
+    function setButtonBusy(button, busy) {
+      if (!button) return;
+      button.classList.toggle("is-loading", busy);
+      button.disabled = busy;
     }
-    async function reorderJobs(jobIds) {
+    async function withFeedback(button, work) {
+      setButtonBusy(button, true);
+      try { return await work(); }
+      finally { setButtonBusy(button, false); }
+    }
+    async function action(kind, jobId, button = null) {
+      return withFeedback(button, async () => {
+        const body = new URLSearchParams({ action: kind, job_id: jobId });
+        await fetch("/api/action", { method: "POST", body });
+        await refresh();
+      });
+    }
+    async function reorderJobs(jobIds, button = null) {
       const body = new URLSearchParams({ action: "reorder" });
       for (const jobId of jobIds) body.append("job_ids", jobId);
-      await fetch("/api/action", { method: "POST", body });
-      await refresh();
+      return withFeedback(button, async () => {
+        await fetch("/api/action", { method: "POST", body });
+        await refresh();
+      });
     }
-    async function moveJob(jobId, direction) {
+    function visibleJobOrder() {
+      return [...document.querySelectorAll(".job[data-job-id]")].map(job => job.dataset.jobId);
+    }
+    function beginJobDrag(event) {
+      if (event.button !== 0) return;
+      const job = event.currentTarget.closest(".job[data-job-id]");
+      if (!job) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const list = job.parentElement;
+      isDraggingJob = true;
+      jobDrag = { job, list, handle: event.currentTarget, moved: false, startY: event.clientY };
+      list.classList.add("is-reordering");
+      job.classList.add("dragging");
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      window.addEventListener("pointermove", updateJobDrag);
+      window.addEventListener("pointerup", finishJobDrag, { once: true });
+      window.addEventListener("pointercancel", finishJobDrag, { once: true });
+    }
+    function updateJobDrag(event) {
+      if (!jobDrag) return;
+      const { job, list } = jobDrag;
+      if (Math.abs(event.clientY - jobDrag.startY) > 4) jobDrag.moved = true;
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".job[data-job-id]");
+      if (!target || target === job || target.parentElement !== list) return;
+      const rect = target.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      list.insertBefore(job, before ? target : target.nextSibling);
+    }
+    async function finishJobDrag() {
+      if (!jobDrag) return;
+      const { job, list } = jobDrag;
+      job.classList.remove("dragging");
+      list.classList.remove("is-reordering");
+      const order = visibleJobOrder();
+      const changed = order.join("|") !== currentJobOrder.filter(id => order.includes(id)).join("|");
+      jobDrag = null;
+      isDraggingJob = false;
+      window.removeEventListener("pointermove", updateJobDrag);
+      window.removeEventListener("pointercancel", finishJobDrag);
+      if (changed) await reorderJobs(order);
+    }
+    async function moveJob(jobId, direction, button = null) {
       const order = [...currentJobOrder];
       const index = order.indexOf(jobId);
       const target = index + direction;
       if (index < 0 || target < 0 || target >= order.length) return;
       [order[index], order[target]] = [order[target], order[index]];
-      await reorderJobs(order);
+      await reorderJobs(order, button);
     }
-    async function openRenderFolder(jobId) {
-      const body = new URLSearchParams({ action: "open_output", job_id: jobId });
-      await fetch("/api/action", { method: "POST", body });
+    async function openRenderFolder(jobId, button = null) {
+      return withFeedback(button, async () => {
+        const body = new URLSearchParams({ action: "open_output", job_id: jobId });
+        await fetch("/api/action", { method: "POST", body });
+      });
     }
-    async function detailAction(kind) {
+    async function detailAction(kind, button = null) {
       if (!selectedJobId) return;
-      await action(kind, selectedJobId);
+      await action(kind, selectedJobId, button);
       await openDetail(selectedJobId, selectedFrame);
     }
-    async function requeueSelectedFrame() {
+    async function requeueSelectedFrame(button = null) {
       if (!selectedJobId || !selectedFrame) return;
-      const body = new URLSearchParams({ action: "requeue_frames", job_id: selectedJobId, frames: selectedFrame });
-      await fetch("/api/action", { method: "POST", body });
-      await refresh();
-      await openDetail(selectedJobId, selectedFrame);
+      return withFeedback(button, async () => {
+        const body = new URLSearchParams({ action: "requeue_frames", job_id: selectedJobId, frames: selectedFrame });
+        await fetch("/api/action", { method: "POST", body });
+        await refresh();
+        await openDetail(selectedJobId, selectedFrame);
+      });
     }
-    async function repairQueue(jobId = "") {
-      const body = new URLSearchParams({ action: "repair", job_id: jobId });
-      await fetch("/api/action", { method: "POST", body });
-      await refresh();
-      if (selectedJobId) await openDetail(selectedJobId, selectedFrame);
+    async function repairQueue(jobId = "", button = null) {
+      return withFeedback(button, async () => {
+        const body = new URLSearchParams({ action: "repair", job_id: jobId });
+        await fetch("/api/action", { method: "POST", body });
+        await refresh();
+        if (selectedJobId) await openDetail(selectedJobId, selectedFrame);
+      });
     }
-    async function workerAction(kind, workerId = "") {
-      const body = new URLSearchParams({ action: kind });
-      if (workerId) body.set("worker_id", workerId);
-      await fetch("/api/action", { method: "POST", body });
-      await refresh();
+    async function workerAction(kind, workerId = "", button = null) {
+      return withFeedback(button, async () => {
+        const body = new URLSearchParams({ action: kind });
+        if (workerId) body.set("worker_id", workerId);
+        await fetch("/api/action", { method: "POST", body });
+        await refresh();
+      });
     }
     function frameClass(status) {
       return `frame ${status || "queued"}`;
@@ -427,10 +522,11 @@ HTML = r"""<!doctype html>
     }
     function workerActions(worker) {
       const id = JSON.stringify(worker.worker_id);
-      const restartLabel = worker.code_current ? "Restart" : "Restart Needed";
+      const restartLabel = worker.code_current ? "Restart" : "Restart (needed)";
       return `<div class="worker-actions">
-        <button title="Ask this worker to stop after its current batch, then let the app restart it." onclick="workerAction('worker_restart', ${id})">${restartLabel}</button>
-        <button title="Ask this worker to stop after its current batch." onclick="workerAction('worker_stop', ${id})">Stop After Batch</button>
+        <button title="Stop after the current batch, then let the app restart it." onclick="workerAction('worker_restart', ${id}, this)">${restartLabel}</button>
+        <button title="Let the current batch finish, then stop this worker." onclick="workerAction('worker_stop', ${id}, this)">Stop After Batch</button>
+        <button title="Stop Cinema 4D now and put this worker's current batch back in the queue." onclick="workerAction('worker_stop_now', ${id}, this)">Stop</button>
       </div>`;
     }
     function jobStatusLabel(job) {
@@ -461,18 +557,16 @@ HTML = r"""<!doctype html>
       const isDone = job.status === "done" || job.status === "archived";
       const canCancel = !isDone && job.status !== "cancelled" && (hasRendering || hasQueued || job.status === "paused" || job.status === "draining");
       const actions = [
-        `<button title="Move up in queue priority" onclick="moveJob('${job.id}', -1)">Up</button>`,
-        `<button title="Move down in queue priority" onclick="moveJob('${job.id}', 1)">Down</button>`,
         `<button onclick="openDetail('${job.id}')">Details</button>`,
-        `<button onclick="openRenderFolder('${job.id}')">Open Render Folder</button>`
+        `<button onclick="openRenderFolder('${job.id}', this)">Open Render Folder</button>`
       ];
-      if (job.status === "paused") actions.push(`<button onclick="action('resume','${job.id}')">Resume</button>`);
-      else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}')">Pause</button>`);
-      if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}')">Stop After Batch</button>`);
-      if (job.status !== "archived") actions.push(`<button onclick="action('archive','${job.id}')">Archive</button>`);
-      actions.push(`<button onclick="repairQueue('${job.id}')">Repair</button>`);
-      if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}')">Requeue Failed</button>`);
-      if (canCancel) actions.push(`<button onclick="action('cancel','${job.id}')">Cancel</button>`);
+      if (job.status === "paused") actions.push(`<button onclick="action('resume','${job.id}', this)">Resume</button>`);
+      else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}', this)">Pause</button>`);
+      if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}', this)">Stop After Batch</button>`);
+      actions.push(`<button onclick="repairQueue('${job.id}', this)">Repair</button>`);
+      if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}', this)">Requeue Failed</button>`);
+      if (canCancel) actions.push(`<button onclick="action('cancel','${job.id}', this)">Cancel</button>`);
+      if (job.status !== "archived") actions.push(`<button class="danger" onclick="action('archive','${job.id}', this)">Delete</button>`);
       return actions.join("");
     }
     function formatSeconds(seconds) {
@@ -553,11 +647,16 @@ HTML = r"""<!doctype html>
       }
       return counts;
     }
-    async function actionGroup(kind, groupId) {
-      const data = await fetch("/api/snapshot").then(r => r.json());
-      const jobs = data.jobs.filter(job => (job.metadata || {}).group_id === groupId);
-      for (const job of jobs) await action(kind, job.id);
-      await refresh();
+    async function actionGroup(kind, groupId, button = null) {
+      return withFeedback(button, async () => {
+        const data = await fetch("/api/snapshot").then(r => r.json());
+        const jobs = data.jobs.filter(job => (job.metadata || {}).group_id === groupId);
+        for (const job of jobs) {
+          const body = new URLSearchParams({ action: kind, job_id: job.id });
+          await fetch("/api/action", { method: "POST", body });
+        }
+        await refresh();
+      });
     }
     function renderJob(j) {
       const collapsed = collapsedJobs.has(j.id);
@@ -566,6 +665,7 @@ HTML = r"""<!doctype html>
         <div class="job-head" onclick="toggleJob('${j.id}')">
           <div class="job-head-main">
             <div class="job-title-row">
+              <button class="job-drag-handle" title="Move job priority" aria-label="Move job priority" onpointerdown="beginJobDrag(event)" onclick="event.stopPropagation()"></button>
               <span class="job-status ${statusClass}">${esc(statusLabel)}</span>
               <div class="job-title">${esc(j.name)}</div>
             </div>
@@ -599,10 +699,10 @@ HTML = r"""<!doctype html>
             <div class="subtle">${esc(group.jobs.length)} takes &middot; ${progress.toFixed(1)}% &middot; ${esc(statusText(counts))}</div>
           </div>
           <div class="actions">
-            <button onclick="actionGroup('pause','${group.id}')">Pause All</button>
-            <button onclick="actionGroup('resume','${group.id}')">Resume All</button>
-            <button onclick="actionGroup('archive','${group.id}')">Archive All</button>
-            <button onclick="actionGroup('cancel','${group.id}')">Cancel All</button>
+            <button onclick="actionGroup('pause','${group.id}', this)">Pause All</button>
+            <button onclick="actionGroup('resume','${group.id}', this)">Resume All</button>
+            <button onclick="actionGroup('cancel','${group.id}', this)">Cancel All</button>
+            <button class="danger" onclick="actionGroup('archive','${group.id}', this)">Delete All</button>
           </div>
         </div>
         <div class="group-jobs job-drop-list">${group.jobs.map(renderJob).join("")}</div>
@@ -650,6 +750,7 @@ HTML = r"""<!doctype html>
       document.getElementById("detail").close();
     }
     async function refresh() {
+      if (isDraggingJob) return;
       const data = await fetch("/api/snapshot").then(r => r.json());
       currentJobOrder = data.jobs.map(job => job.id);
       document.getElementById("share").textContent = data.share;
@@ -740,13 +841,15 @@ class MonitorHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         values = parse_qs(self.rfile.read(length).decode("utf-8"))
         action = values.get("action", [""])[0]
-        if action in {"worker_restart", "worker_stop"}:
+        if action in {"worker_restart", "worker_stop", "worker_stop_now"}:
             worker_id = values.get("worker_id", [""])[0]
             if not worker_id:
                 self.send_error(HTTPStatus.BAD_REQUEST, "Missing worker_id")
                 return
             if action == "worker_restart":
                 request_worker_restart(self.share, worker_id)
+            elif action == "worker_stop_now":
+                request_worker_stop_now(self.share, worker_id)
             else:
                 request_worker_stop_after_batch(self.share, worker_id)
             self.send_json({"ok": True})

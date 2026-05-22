@@ -24,6 +24,7 @@ from .queue import (
     submit_job,
     summarize_job,
     worker_stop_requested,
+    worker_stop_now_requested,
     worker_restart_requested,
 )
 
@@ -122,7 +123,9 @@ def cmd_worker(args: argparse.Namespace) -> int:
         while True:
             if worker_stop_requested(share, worker_id):
                 restarting = worker_restart_requested(share, worker_id)
-                print(("Restart requested." if restarting else "Quit-after-batch requested.") + " Worker is stopping before claiming new frames.", flush=True)
+                stopping_now = worker_stop_now_requested(share, worker_id)
+                label = "Restart requested." if restarting else "Stop requested." if stopping_now else "Quit-after-batch requested."
+                print(label + " Worker is stopping before claiming new frames.", flush=True)
                 clear_worker_restart_request(share, worker_id)
                 clear_worker_stop_request(share, worker_id)
                 return 75 if restarting else 76
@@ -152,7 +155,9 @@ def cmd_worker(args: argparse.Namespace) -> int:
             )
             if worker_stop_requested(share, worker_id):
                 restarting = worker_restart_requested(share, worker_id)
-                print(("Restart requested." if restarting else "Quit-after-batch requested.") + " Worker stopped after finishing the current batch.", flush=True)
+                stopping_now = worker_stop_now_requested(share, worker_id)
+                label = "Restart requested." if restarting else "Stop requested." if stopping_now else "Quit-after-batch requested."
+                print(label + " Worker stopped after finishing the current batch.", flush=True)
                 clear_worker_restart_request(share, worker_id)
                 clear_worker_stop_request(share, worker_id)
                 return 75 if restarting else 76

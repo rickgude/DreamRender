@@ -427,6 +427,10 @@ def worker_stop_request_path(share: Share, worker_id: str) -> Path:
     return share.workers_dir / f"{worker_id}.stop"
 
 
+def worker_stop_now_request_path(share: Share, worker_id: str) -> Path:
+    return share.workers_dir / f"{worker_id}.stopnow"
+
+
 def worker_restart_request_path(share: Share, worker_id: str) -> Path:
     return share.workers_dir / f"{worker_id}.restart"
 
@@ -436,6 +440,11 @@ def request_worker_stop_after_batch(share: Share, worker_id: str) -> None:
     worker_stop_request_path(share, worker_id).write_text(utc_now() + "\n", encoding="utf-8")
 
 
+def request_worker_stop_now(share: Share, worker_id: str) -> None:
+    share.workers_dir.mkdir(parents=True, exist_ok=True)
+    worker_stop_now_request_path(share, worker_id).write_text(utc_now() + "\n", encoding="utf-8")
+
+
 def request_worker_restart(share: Share, worker_id: str) -> None:
     share.workers_dir.mkdir(parents=True, exist_ok=True)
     worker_restart_request_path(share, worker_id).write_text(utc_now() + "\n", encoding="utf-8")
@@ -443,10 +452,11 @@ def request_worker_restart(share: Share, worker_id: str) -> None:
 
 
 def clear_worker_stop_request(share: Share, worker_id: str) -> None:
-    try:
-        worker_stop_request_path(share, worker_id).unlink()
-    except FileNotFoundError:
-        pass
+    for path in (worker_stop_request_path(share, worker_id), worker_stop_now_request_path(share, worker_id)):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def clear_worker_restart_request(share: Share, worker_id: str) -> None:
@@ -457,7 +467,11 @@ def clear_worker_restart_request(share: Share, worker_id: str) -> None:
 
 
 def worker_stop_requested(share: Share, worker_id: str) -> bool:
-    return worker_stop_request_path(share, worker_id).exists()
+    return worker_stop_request_path(share, worker_id).exists() or worker_stop_now_request_path(share, worker_id).exists()
+
+
+def worker_stop_now_requested(share: Share, worker_id: str) -> bool:
+    return worker_stop_now_request_path(share, worker_id).exists()
 
 
 def worker_restart_requested(share: Share, worker_id: str) -> bool:
@@ -588,6 +602,7 @@ def render_frames(
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"[{utc_now()}] Running: {command}\n")
         cancelled = False
+        worker_stopped = False
         while process.poll() is None:
             try:
                 line = output_lines.get(timeout=1)
@@ -595,6 +610,18 @@ def render_frames(
                 log.flush()
             except Empty:
                 pass
+            if read_job_status(job_dir) == "cancelled":
+                cancelled = True
+                log.write(f"[{utc_now()}] Job was cancelled. Stopping Cinema 4D process tree.\n")
+                log.flush()
+                terminate_process_tree(process)
+                break
+            if worker_stop_now_requested(share, worker_id):
+                worker_stopped = True
+                log.write(f"[{utc_now()}] Worker stop requested. Stopping Cinema 4D process tree and requeueing this batch.\n")
+                log.flush()
+                terminate_process_tree(process)
+                break
             now = time.time()
             if now - last_heartbeat >= heartbeat_interval:
                 active = {"job_id": job["id"], "start_frame": start_frame, "end_frame": end_frame}
@@ -609,12 +636,6 @@ def render_frames(
                     log.write(f"[{utc_now()}] Could not write frame heartbeat: {exc}\n")
                     log.flush()
                 last_heartbeat = now
-                if read_job_status(job_dir) == "cancelled":
-                    cancelled = True
-                    log.write(f"[{utc_now()}] Job was cancelled. Stopping Cinema 4D process tree.\n")
-                    log.flush()
-                    terminate_process_tree(process)
-                    break
 
         output_thread.join(timeout=2)
         while True:
@@ -622,7 +643,7 @@ def render_frames(
                 log.write(output_lines.get_nowait())
             except Empty:
                 break
-        return_code = -9 if cancelled else process.wait()
+        return_code = -15 if worker_stopped else -9 if cancelled else process.wait()
         log.write(f"[{utc_now()}] Exit code: {return_code}\n")
 
     print(f"Finished job {job['id']} frame(s) {start_frame}-{end_frame} with exit code {return_code}", flush=True)
@@ -657,6 +678,12 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
             frame["status"] = "done"
         elif return_code == -9:
             frame["status"] = "cancelled"
+        elif return_code == -15:
+            frame["status"] = "queued"
+            frame.pop("worker_id", None)
+            frame.pop("chunk_start", None)
+            frame.pop("chunk_end", None)
+            frame.pop("heartbeat_at", None)
         else:
             output = find_rendered_frame_output(job, int(frame["frame"]), parse_utc(str(job.get("created_at", ""))) or 0.0, 0) if job else None
             if output:
@@ -671,7 +698,11 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
                 frame["output_file"] = output
         frame["return_code"] = return_code
         frame["log"] = str(log_path)
-        frame["finished_at"] = utc_now()
+        if frame.get("status") == "queued":
+            frame.pop("started_at", None)
+            frame.pop("finished_at", None)
+        else:
+            frame["finished_at"] = utc_now()
         frame["updated_at"] = utc_now()
         write_json_atomic(frame_path, frame)
 
