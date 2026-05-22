@@ -247,7 +247,8 @@ body.dashboard-active .shell {
 .widget-top span {
   margin: 0;
 }
-.drag-handle {
+.drag-handle,
+.dashboard-job-drag {
   width: 34px;
   min-width: 34px;
   min-height: 34px;
@@ -260,7 +261,8 @@ body.dashboard-active .shell {
   position: relative;
   font-size: 0;
 }
-.drag-handle::before {
+.drag-handle::before,
+.dashboard-job-drag::before {
   content: "";
   width: 18px;
   height: 18px;
@@ -271,7 +273,9 @@ body.dashboard-active .shell {
     radial-gradient(circle, var(--muted) 2px, transparent 2.5px) 0 0 / 9px 9px;
 }
 .drag-handle:active,
-.is-dragging-widget .drag-handle {
+.dashboard-job-drag:active,
+.is-dragging-widget .drag-handle,
+.is-dragging-dashboard .dashboard-job-drag {
   cursor: grabbing;
 }
 
@@ -592,14 +596,8 @@ textarea {
   flex-wrap: wrap;
 }
 .dashboard-job-drag {
-  width: 30px;
-  min-width: 30px;
-  min-height: 30px;
-  padding: 0;
-  cursor: grab;
-  background:
-    radial-gradient(circle, var(--ink) 1.6px, transparent 2px) 7px 7px / 8px 8px repeat,
-    #f8faf8;
+  flex: 0 0 auto;
+  margin-right: 2px;
 }
 .dashboard-status {
   display: inline-flex;

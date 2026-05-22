@@ -233,7 +233,7 @@ function renderDashboard(queue, appData) {
         <strong>${esc(worker.worker_id)}</strong>
         <div class="muted">${esc(workerLabel(worker))}</div>
         <div class="dashboard-worker-actions">
-          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current ? "Restart" : "Restart (needed)"}</button>
+          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current ? "Restart" : "Restart needed"}</button>
           <button data-dashboard-action="worker_stop" data-worker="${esc(worker.worker_id)}">Stop After Batch</button>
           <button data-dashboard-action="worker_stop_now" data-worker="${esc(worker.worker_id)}">Stop</button>
         </div>
@@ -275,7 +275,7 @@ function renderDashboardJob(job) {
     <div class="dashboard-job-main" data-dashboard-toggle="${esc(job.id)}">
       <div>
         <div class="dashboard-job-title">
-          <button class="dashboard-job-drag" title="Move job priority" aria-label="Move job priority"></button>
+          <button class="dashboard-job-drag drag-handle" type="button" title="Move job priority" aria-label="Move job priority"></button>
           <span class="dashboard-status ${statusClass}">${esc(statusLabel)}</span>
           <strong>${esc(job.name)}</strong>
         </div>
@@ -494,10 +494,12 @@ $("#native-dashboard").addEventListener("pointerdown", event => {
   if (!job || !list) return;
   event.preventDefault();
   event.stopPropagation();
-  handle.setPointerCapture(event.pointerId);
+  try { handle.setPointerCapture(event.pointerId); } catch {}
   state.dashboardDrag = {
     job,
+    handle,
     list,
+    startX: event.clientX,
     startY: event.clientY,
     active: false,
   };
@@ -506,10 +508,12 @@ $("#native-dashboard").addEventListener("pointerdown", event => {
 document.addEventListener("pointermove", event => {
   const drag = state.dashboardDrag;
   if (!drag) return;
-  if (!drag.active && Math.abs(event.clientY - drag.startY) > 4) {
+  const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (!drag.active && distance > 4) {
     drag.active = true;
     drag.job.classList.add("dragging");
     drag.list.classList.add("is-reordering");
+    document.body.classList.add("is-dragging-dashboard");
   }
   if (!drag.active) return;
   drag.job.style.pointerEvents = "none";
@@ -525,6 +529,7 @@ document.addEventListener("pointerup", async () => {
   if (!drag) return;
   drag.job.classList.remove("dragging");
   drag.list.classList.remove("is-reordering");
+  document.body.classList.remove("is-dragging-dashboard");
   const jobIds = [...drag.list.querySelectorAll(".dashboard-job")].map(job => job.dataset.jobId);
   const changed = drag.active;
   state.dashboardDrag = null;
@@ -541,6 +546,7 @@ document.addEventListener("pointercancel", () => {
   if (!state.dashboardDrag) return;
   state.dashboardDrag.job.classList.remove("dragging");
   state.dashboardDrag.list.classList.remove("is-reordering");
+  document.body.classList.remove("is-dragging-dashboard");
   state.dashboardDrag = null;
 });
 $("#save-config").addEventListener("click", saveConfig);
