@@ -442,6 +442,8 @@ input {
   margin-top: 3px;
 }
 .health-dot.ok { background: var(--good); }
+.health-dot.warn { background: var(--rendering); }
+.health-dot.error { background: var(--bad); }
 .health-label { font-weight: 850; }
 .health-detail { color: var(--muted); overflow-wrap: anywhere; }
 

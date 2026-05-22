@@ -37,6 +37,7 @@ def source_signature() -> str:
 
 
 CODE_SIGNATURE = source_signature()
+WORKER_SESSION_ID = uuid.uuid4().hex[:10]
 
 
 class ShareAccessError(RuntimeError):
@@ -45,6 +46,9 @@ class ShareAccessError(RuntimeError):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+WORKER_PROCESS_STARTED_AT = utc_now()
 
 
 def parse_utc(value: str | None) -> float | None:
@@ -339,7 +343,7 @@ def list_visible_jobs(share: Share, include_archived: bool = False) -> list[Path
 
 
 def frame_is_claimable(frame: dict[str, Any], stale_after_seconds: int) -> bool:
-    if frame.get("status") in {"queued", "failed"}:
+    if frame.get("status") == "queued":
         return True
     if frame.get("status") != "rendering":
         return False
@@ -425,6 +429,9 @@ def heartbeat_worker(share: Share, worker_id: str, active: dict[str, Any] | None
         {
             "worker_id": worker_id,
             "host": socket.gethostname(),
+            "pid": os.getpid(),
+            "session_id": WORKER_SESSION_ID,
+            "started_at": WORKER_PROCESS_STARTED_AT,
             "heartbeat_at": utc_now(),
             "code_signature": CODE_SIGNATURE,
             "active": active,
@@ -468,6 +475,13 @@ def clear_worker_stop_request(share: Share, worker_id: str) -> None:
             pass
 
 
+def clear_worker_stop_after_batch_request(share: Share, worker_id: str) -> None:
+    try:
+        worker_stop_request_path(share, worker_id).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def clear_worker_restart_request(share: Share, worker_id: str) -> None:
     try:
         worker_restart_request_path(share, worker_id).unlink()
@@ -477,6 +491,10 @@ def clear_worker_restart_request(share: Share, worker_id: str) -> None:
 
 def worker_stop_requested(share: Share, worker_id: str) -> bool:
     return worker_stop_request_path(share, worker_id).exists() or worker_stop_now_request_path(share, worker_id).exists()
+
+
+def worker_stop_after_batch_requested(share: Share, worker_id: str) -> bool:
+    return worker_stop_request_path(share, worker_id).exists()
 
 
 def worker_stop_now_requested(share: Share, worker_id: str) -> bool:
@@ -1231,7 +1249,7 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
         worker["stale_active"] = bool(worker.get("active") and worker["state"] == "offline")
         worker["current_code_signature"] = CODE_SIGNATURE
         worker["code_current"] = worker.get("code_signature") == CODE_SIGNATURE
-        worker["stop_after_batch"] = worker_stop_requested(share, worker_id)
+        worker["stop_after_batch"] = worker_stop_after_batch_requested(share, worker_id)
         worker["restart_requested"] = worker_restart_requested(share, worker_id)
         worker["stop_now_requested"] = worker_stop_now_requested(share, worker_id)
         if worker["state"] == "offline":

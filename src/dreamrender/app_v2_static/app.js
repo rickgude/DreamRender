@@ -266,6 +266,8 @@ function renderDashboardJob(job) {
   const hasQueued = (counts.queued || 0) > 0 || (counts.failed || 0) > 0;
   const canCancel = !isDone && job.status !== "cancelled" && (hasRendering || hasQueued || job.status === "paused" || job.status === "draining");
   const actions = [
+    `<button data-dashboard-action="move_job" data-direction="up" data-job="${esc(job.id)}">Up</button>`,
+    `<button data-dashboard-action="move_job" data-direction="down" data-job="${esc(job.id)}">Down</button>`,
     `<button data-dashboard-action="open_output" data-job="${esc(job.id)}">Open Render Folder</button>`,
     `<button data-dashboard-action="repair_job" data-job="${esc(job.id)}">Repair</button>`,
   ];
@@ -353,7 +355,7 @@ async function saveDashboardOrder(list) {
 function renderHealth(items) {
   $("#health").innerHTML = items.map(item => `
     <div class="health-item">
-      <span class="health-dot ${item.ok ? "ok" : ""}"></span>
+      <span class="health-dot ${esc(item.tone || (item.ok ? "ok" : "error"))}"></span>
       <span class="health-label">${esc(item.label)}</span>
       <span class="health-detail">${esc(item.detail)}</span>
     </div>
@@ -510,6 +512,7 @@ $("#native-dashboard").addEventListener("click", async event => {
       action: button.dataset.dashboardAction,
       job_id: button.dataset.job || "",
       worker_id: button.dataset.worker || "",
+      direction: button.dataset.direction || "",
     });
     await refresh();
   } catch (error) {

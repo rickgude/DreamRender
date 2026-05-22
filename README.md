@@ -39,6 +39,10 @@ That guide covers:
 - Marked-take submission, grouped in the dashboard.
 - Worker colors, job status labels, folder open actions, archive/requeue/cancel
   controls, and stale-worker recovery.
+- App health diagnostics for missing Cinema 4D paths, plugin install state,
+  queue write access, worker heartbeat loss, failed frames, and stale locks.
+- Failed frames stay failed until you intentionally repair or requeue them, so
+  broken frames do not loop forever in the background.
 - Cinema 4D output paths are preserved from Render Settings, including common
   Cinema 4D tokens.
 
@@ -123,6 +127,7 @@ The dashboard is opened from the DreamRender app. It shows:
 - frame ownership by worker color
 - logs and browser-friendly previews
 - archive, requeue, cancel, pause, resume, and priority controls
+- drag priority controls plus explicit Up/Down buttons as a reliable fallback
 
 PNG, JPG, WebP, and GIF previews display directly in the browser. EXR/TIFF files
 need a converter on the monitor machine for thumbnails, such as ImageMagick,

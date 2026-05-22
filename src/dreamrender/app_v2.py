@@ -18,8 +18,11 @@ from urllib.parse import parse_qs, urlparse
 from .queue import (
     CODE_SIGNATURE,
     Share,
+    clear_worker_restart_request,
+    clear_worker_stop_after_batch_request,
     clear_worker_stop_request,
     get_job_detail,
+    list_visible_jobs,
     queue_snapshot,
     repair_queue,
     request_worker_restart,
@@ -28,7 +31,7 @@ from .queue import (
     requeue_failed,
     set_job_priorities,
     set_job_status,
-    worker_stop_requested,
+    worker_stop_after_batch_requested,
 )
 
 
@@ -146,6 +149,7 @@ class AppV2State:
         self.monitor_process: subprocess.Popen[str] | None = None
         self.worker_log: deque[str] = deque(maxlen=1200)
         self.status = "Ready"
+        self.worker_should_run = False
         self.lock = threading.RLock()
 
     def python_command(self) -> list[str]:
@@ -169,6 +173,7 @@ class AppV2State:
     def start(self) -> None:
         with self.lock:
             self.share().init()
+            self.worker_should_run = True
             self.start_monitor()
             self.start_worker()
             self.status = "DreamRender running"
@@ -181,6 +186,7 @@ class AppV2State:
                 stop_pid_tree(self.monitor_process.pid)
             self.worker_process = None
             self.monitor_process = None
+            self.worker_should_run = False
             self.status = "DreamRender stopped"
 
     def start_worker(self) -> None:
@@ -190,6 +196,8 @@ class AppV2State:
         if not c4d.exists():
             self.status = "Cinema 4D Commandline.exe is missing"
             return
+        clear_worker_restart_request(self.share(), str(self.config["worker_id"]))
+        clear_worker_stop_request(self.share(), str(self.config["worker_id"]))
         command = self.python_command() + [
             "worker",
             "--share",
@@ -281,31 +289,101 @@ class AppV2State:
         else:
             webbrowser.open(folder.as_uri())
 
-    def health(self) -> list[dict[str, object]]:
+    def health(self, queue: dict[str, object] | None = None) -> list[dict[str, object]]:
         share = Path(str(self.config["share"]))
         c4d = Path(str(self.config["c4d"]))
+        plugin_installed = any((target / "DreamRender.pyp").exists() for target in self.c4d_plugin_targets())
         items = [
-            {"label": "Queue", "ok": share.exists(), "detail": str(share)},
-            {"label": "Cinema 4D", "ok": c4d.exists(), "detail": str(c4d)},
-            {"label": "Plugin", "ok": any((target / "DreamRender.pyp").exists() for target in self.c4d_plugin_targets()), "detail": f"Cinema 4D {C4D_VERSION} submitter"},
+            {"label": "Queue", "ok": share.exists(), "tone": "ok" if share.exists() else "error", "detail": str(share)},
+            {"label": "Cinema 4D", "ok": c4d.exists(), "tone": "ok" if c4d.exists() else "error", "detail": str(c4d)},
+            {
+                "label": "Plugin",
+                "ok": plugin_installed,
+                "tone": "ok" if plugin_installed else "warn",
+                "detail": f"Cinema 4D {C4D_VERSION} submitter",
+            },
         ]
         try:
             share.mkdir(parents=True, exist_ok=True)
             probe = share / f"write-test-{int(time.time() * 1000)}.tmp"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink()
-            items.append({"label": "Queue Access", "ok": True, "detail": "Writable"})
+            items.append({"label": "Queue Access", "ok": True, "tone": "ok", "detail": "Writable"})
         except Exception as exc:
-            items.append({"label": "Queue Access", "ok": False, "detail": str(exc)})
+            items.append({"label": "Queue Access", "ok": False, "tone": "error", "detail": str(exc)})
+        if queue:
+            workers = [worker for worker in queue.get("workers", []) if isinstance(worker, dict)]
+            jobs = [job for job in queue.get("jobs", []) if isinstance(job, dict)]
+            online_workers = [worker for worker in workers if worker.get("state") == "online"]
+            heartbeat_lost = [worker for worker in workers if worker.get("state") == "heartbeat_lost"]
+            code_mismatch = [worker for worker in workers if worker.get("state") == "online" and not worker.get("code_current", True)]
+            failed_jobs = [job for job in jobs if int((job.get("counts") or {}).get("failed", 0)) > 0]
+            rendering_jobs = [job for job in jobs if int((job.get("counts") or {}).get("rendering", 0)) > 0]
+            stale_locks = []
+            for pattern in ("jobs/**/*.lock", "jobs/**/claim.lock"):
+                for lock_path in share.glob(pattern):
+                    try:
+                        if time.time() - lock_path.stat().st_mtime > 600:
+                            stale_locks.append(lock_path)
+                    except OSError:
+                        continue
+            items.append({
+                "label": "Workers",
+                "ok": bool(online_workers) or not jobs,
+                "tone": "ok" if online_workers or not jobs else "warn",
+                "detail": f"{len(online_workers)} online, {len(workers)} known",
+            })
+            if heartbeat_lost:
+                items.append({
+                    "label": "Heartbeat",
+                    "ok": False,
+                    "tone": "warn",
+                    "detail": ", ".join(str(worker.get("worker_id")) for worker in heartbeat_lost) + " may still be rendering",
+                })
+            if code_mismatch:
+                items.append({
+                    "label": "Worker Version",
+                    "ok": False,
+                    "tone": "warn",
+                    "detail": ", ".join(str(worker.get("worker_id")) for worker in code_mismatch) + " runs different local files",
+                })
+            if failed_jobs:
+                items.append({
+                    "label": "Failed Frames",
+                    "ok": False,
+                    "tone": "error",
+                    "detail": f"{len(failed_jobs)} job(s) need repair or requeue",
+                })
+            if rendering_jobs and not online_workers:
+                items.append({
+                    "label": "Stale Renders",
+                    "ok": False,
+                    "tone": "warn",
+                    "detail": "Frames are marked rendering but no worker is online",
+                })
+            if stale_locks:
+                items.append({
+                    "label": "Queue Locks",
+                    "ok": False,
+                    "tone": "warn",
+                    "detail": f"{len(stale_locks)} old lock file(s) found; Repair Queue can clear stuck frames",
+                })
         return items
 
     def snapshot(self) -> dict[str, object]:
         with self.lock:
             if self.worker_process and self.worker_process.poll() is not None:
-                self.status = f"Worker exited with code {self.worker_process.returncode}"
+                return_code = self.worker_process.returncode
                 self.worker_process = None
+                if return_code == 75 or (self.worker_should_run and self.config.get("keep_worker_running") and return_code != 76):
+                    self.status = f"Worker restarted after exit code {return_code}"
+                    self.start_worker()
+                else:
+                    self.status = f"Worker exited with code {return_code}"
             if self.monitor_process and self.monitor_process.poll() is not None:
                 self.monitor_process = None
+                if self.worker_should_run:
+                    self.start_monitor()
             share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
             try:
                 share_snapshot = queue_snapshot(self.share())
@@ -319,7 +397,7 @@ class AppV2State:
                 "worker_running": self.worker_running(),
                 "monitor_running": self.monitor_running(),
                 "monitor_url": self.monitor_url(),
-                "health": self.health(),
+                "health": self.health(share_snapshot),
                 "queue": share_snapshot,
                 "gpus": gpus,
                 "gpu_message": gpu_message,
@@ -390,8 +468,8 @@ class AppV2Handler(BaseHTTPRequestHandler):
             elif action == "worker_stop_now":
                 request_worker_stop_now(self.state.share(), worker_id)
             else:
-                if worker_stop_requested(self.state.share(), worker_id):
-                    clear_worker_stop_request(self.state.share(), worker_id)
+                if worker_stop_after_batch_requested(self.state.share(), worker_id):
+                    clear_worker_stop_after_batch_request(self.state.share(), worker_id)
                 else:
                     request_worker_stop_after_batch(self.state.share(), worker_id)
             response_json(self, {"ok": True})
@@ -414,6 +492,21 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 requeue_failed(self.state.share(), job_id)
             elif action == "open_output":
                 self.state.open_output_folder(job_id)
+            response_json(self, {"ok": True})
+        elif action == "move_job":
+            job_id = str(payload.get("job_id", ""))
+            direction = str(payload.get("direction", ""))
+            job_ids = [path.name for path in list_visible_jobs(self.state.share())]
+            if job_id not in job_ids or direction not in {"up", "down"}:
+                response_json(self, {"ok": False, "message": "Cannot move this job."}, HTTPStatus.BAD_REQUEST)
+                return
+            index = job_ids.index(job_id)
+            target = index - 1 if direction == "up" else index + 1
+            if target < 0 or target >= len(job_ids):
+                response_json(self, {"ok": True, "message": "Job is already at that priority."})
+                return
+            job_ids[index], job_ids[target] = job_ids[target], job_ids[index]
+            set_job_priorities(self.state.share(), job_ids)
             response_json(self, {"ok": True})
         elif action == "reorder":
             job_ids = payload.get("job_ids", [])
