@@ -176,7 +176,7 @@ function renderDashboard(data) {
     loading.querySelector("span").textContent = data.worker_running ? "The monitor is starting. This will only take a moment." : "Start DreamRender to view render jobs here.";
     return;
   }
-  const url = data.monitor_url ? `${data.monitor_url}?embed=1` : "";
+  const url = data.monitor_url ? new URL("embed", data.monitor_url).toString() : "";
   if (url && state.dashboardLoadedUrl !== url) {
     state.dashboardLoadedUrl = url;
     loading.hidden = false;

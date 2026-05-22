@@ -186,7 +186,7 @@ button.stop.is-loading:disabled {
 }
 .tab-panel.active { display: block; }
 #dashboard-panel {
-  padding: 18px 0 0;
+  padding: 0;
 }
 body.dashboard-active {
   overflow: hidden;
@@ -456,8 +456,9 @@ textarea {
 
 .dashboard-card {
   position: relative;
-  min-height: calc(100vh - 226px);
+  min-height: calc(100vh - 198px);
   overflow: hidden;
+  border-top: 1px solid var(--line);
   border-left: 0;
   border-right: 0;
   border-bottom: 0;
@@ -468,7 +469,7 @@ textarea {
 #dashboard-frame {
   display: block;
   width: 100%;
-  height: calc(100vh - 226px);
+  height: calc(100vh - 198px);
   min-height: 680px;
   border: 0;
   background: var(--shell);

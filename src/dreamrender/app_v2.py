@@ -352,7 +352,9 @@ class AppV2Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Unknown action")
 
     def send_static(self, request_path: str) -> None:
-        path = STATIC_DIR / ("index.html" if request_path in {"", "/"} else request_path.lstrip("/"))
+        parsed = urlparse(request_path)
+        clean_path = parsed.path
+        path = STATIC_DIR / ("index.html" if clean_path in {"", "/"} else clean_path.lstrip("/"))
         try:
             resolved = path.resolve()
             if STATIC_DIR.resolve() not in resolved.parents and resolved != STATIC_DIR.resolve():
@@ -369,6 +371,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
             body = resolved.read_bytes()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

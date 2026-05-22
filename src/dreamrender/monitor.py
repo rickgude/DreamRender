@@ -32,6 +32,9 @@ HTML = r"""<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DreamRender Monitor</title>
+  <script>
+    if (window.self !== window.top) document.documentElement.classList.add("embedded-frame");
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -260,15 +263,18 @@ HTML = r"""<!doctype html>
     }
     .preview-note strong { display: block; margin-bottom: 6px; color: var(--text); }
     .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
-    body.embedded {
+    body.embedded,
+    html.embedded-frame body {
       padding: 0;
       background: var(--shell);
       overflow: auto;
     }
-    body.embedded header {
+    body.embedded header,
+    html.embedded-frame header {
       display: none;
     }
-    body.embedded main {
+    body.embedded main,
+    html.embedded-frame main {
       max-width: none;
       min-height: 100vh;
       margin: 0;
@@ -276,14 +282,18 @@ HTML = r"""<!doctype html>
       border-radius: 0;
       box-shadow: none;
     }
-    body.embedded aside {
+    body.embedded aside,
+    html.embedded-frame aside {
       padding: 22px 20px;
     }
-    body.embedded section {
+    body.embedded section,
+    html.embedded-frame section {
       padding: 22px 26px;
     }
     body.embedded .job-group,
-    body.embedded .job {
+    body.embedded .job,
+    html.embedded-frame .job-group,
+    html.embedded-frame .job {
       box-shadow: none;
     }
     @media (max-width: 820px) {
@@ -820,8 +830,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         route = parsed.path
         query = parse_qs(parsed.query)
-        if route == "/":
-            html = HTML.replace("<body>", '<body class="embedded">') if query.get("embed", ["0"])[0] == "1" else HTML
+        if route in {"/", "/embed"}:
+            embedded = route == "/embed" or query.get("embed", ["0"])[0] == "1"
+            html = HTML.replace("<body>", '<body class="embedded">') if embedded else HTML
             self.send_text(html, "text/html; charset=utf-8")
             return
         if route == "/api/snapshot":
@@ -954,6 +965,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -962,6 +974,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         body = text.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
