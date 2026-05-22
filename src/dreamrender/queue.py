@@ -129,7 +129,10 @@ class FileLock:
         self.handle: int | None = None
 
     def __enter__(self) -> bool:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
         try:
             self.handle = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
             os.write(self.handle, f"{socket.gethostname()} {utc_now()}".encode("utf-8"))
@@ -143,6 +146,18 @@ class FileLock:
                     return True
                 except OSError:
                     return False
+            return False
+        except PermissionError:
+            if self._is_stale():
+                try:
+                    self.path.unlink()
+                    self.handle = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    os.write(self.handle, f"{socket.gethostname()} {utc_now()}".encode("utf-8"))
+                    return True
+                except OSError:
+                    return False
+            return False
+        except OSError:
             return False
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:

@@ -75,8 +75,16 @@ button:hover { transform: translateY(-1px); border-color: #bfcac5; }
 button.primary { background: var(--ink); border-color: var(--ink); color: white; }
 button.stop { background: var(--good); border-color: var(--good); color: var(--ink); }
 button:disabled {
-  cursor: wait;
-  opacity: .7;
+  cursor: not-allowed;
+  background: #e3e9e6;
+  border-color: #d4ddd9;
+  color: #8b9698;
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+}
+button:disabled:hover {
+  border-color: #d4ddd9;
   transform: none;
 }
 
