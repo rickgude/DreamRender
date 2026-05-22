@@ -22,11 +22,25 @@
 
     <nav class="tabs" aria-label="DreamRender app sections">
       <button class="tab active" data-tab="setup">Setup</button>
+      <button class="tab" data-tab="dashboard-panel" id="dashboard-tab" disabled>Dashboard</button>
       <button class="tab" data-tab="activity">Activity</button>
     </nav>
 
     <section id="setup" class="tab-panel active">
       <div class="bento-grid" data-grid="setup">
+        <section class="card stack bento-card" data-widget="plugin">
+          <div class="card-head">
+            <h2>Plugin</h2>
+            <button class="drag-handle" type="button" aria-label="Move Plugin widget" title="Move widget"></button>
+          </div>
+          <p class="body-copy">Install the Cinema 4D submitter on this machine, then submit renders from C4D.</p>
+          <div class="button-row">
+            <button class="primary" id="install-plugin">Install C4D Plugin</button>
+            <button id="open-queue">Open Queue Folder</button>
+          </div>
+          <div id="plugin-result" class="inline-message" hidden></div>
+        </section>
+
         <article class="card stat bento-card" data-widget="worker">
           <div class="widget-top"><span>Worker</span><button class="drag-handle" type="button" aria-label="Move Worker widget" title="Move widget"></button></div>
           <strong id="worker-state">Stopped</strong>
@@ -39,19 +53,6 @@
           <div class="widget-top"><span>Status</span><button class="drag-handle" type="button" aria-label="Move Status widget" title="Move widget"></button></div>
           <strong id="app-status">Ready</strong>
         </article>
-
-        <section class="card stack bento-card" data-widget="onboarding">
-          <div class="card-head">
-            <h2>Onboarding</h2>
-            <button class="drag-handle" type="button" aria-label="Move Onboarding widget" title="Move widget"></button>
-          </div>
-          <p class="body-copy">Use this machine as a DreamRender node. Set the queue, confirm Cinema 4D, install the plugin, then start rendering.</p>
-          <div class="button-row">
-            <button class="primary" id="install-plugin">Install C4D Plugin</button>
-            <button id="open-queue">Open Queue Folder</button>
-          </div>
-          <div id="plugin-result" class="inline-message" hidden></div>
-        </section>
 
         <section class="card stack bento-card" data-widget="setup">
           <div class="card-head">
@@ -90,6 +91,17 @@
           <div id="queue-summary" class="queue-summary">Loading...</div>
         </section>
       </div>
+    </section>
+
+    <section id="dashboard-panel" class="tab-panel">
+      <section class="dashboard-card card">
+        <div class="dashboard-loading" id="dashboard-loading">
+          <div class="dashboard-spinner"></div>
+          <strong>Dashboard loading...</strong>
+          <span>Start DreamRender to view render jobs here.</span>
+        </div>
+        <iframe id="dashboard-frame" title="DreamRender Dashboard"></iframe>
+      </section>
     </section>
 
     <section id="activity" class="tab-panel">

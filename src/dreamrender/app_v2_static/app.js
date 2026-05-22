@@ -2,8 +2,9 @@ const state = {
   data: null,
   drag: null,
   toggleBusy: null,
+  dashboardLoadedUrl: "",
 };
-const layoutKey = "dreamrender.app.bentoLayout.v2";
+const layoutKey = "dreamrender.app.bentoLayout.v3";
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -115,6 +116,15 @@ function clearDropTarget() {
   document.querySelectorAll(".drop-target").forEach(card => card.classList.remove("drop-target"));
 }
 
+function selectTab(tabId) {
+  const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  if (!tab || tab.disabled) return;
+  document.querySelectorAll(".tab").forEach(button => button.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
+  tab.classList.add("active");
+  document.getElementById(tab.dataset.tab).classList.add("active");
+}
+
 async function refresh() {
   const data = await fetch("/api/state").then(response => response.json());
   state.data = data;
@@ -129,7 +139,10 @@ function render(data) {
   $("#toggle").classList.toggle("is-loading", Boolean(busy));
   $("#toggle").disabled = Boolean(busy);
   $("#dashboard").disabled = Boolean(busy) || !data.worker_running;
-  $("#dashboard").title = data.worker_running ? "Open the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
+  $("#dashboard").title = data.worker_running ? "Show the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
+  $("#dashboard-tab").disabled = Boolean(busy) || !data.worker_running;
+  $("#dashboard-tab").title = data.worker_running ? "Show the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
+  if (!data.worker_running && $("#dashboard-panel").classList.contains("active")) selectTab("setup");
   $("#worker-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.worker_running ? `Running as ${config.worker_id}` : "Stopped";
   $("#monitor-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.monitor_running ? `Running on port ${config.monitor_port}` : "Stopped";
   $("#app-status").textContent = busy === "start" ? "Starting worker and monitor" : busy === "stop" ? "Stopping services" : data.status || "Ready";
@@ -147,7 +160,27 @@ function render(data) {
   renderHealth(data.health || []);
   renderQueue(data.queue || {});
   renderGpus(data.gpus || [], data.gpu_message);
+  renderDashboard(data);
   $("#log").value = (data.worker_log || []).join("\n");
+}
+
+function renderDashboard(data) {
+  const frame = $("#dashboard-frame");
+  const loading = $("#dashboard-loading");
+  if (!data.worker_running || !data.monitor_running) {
+    state.dashboardLoadedUrl = "";
+    frame.removeAttribute("src");
+    loading.hidden = false;
+    loading.querySelector("strong").textContent = data.worker_running ? "Dashboard starting..." : "Dashboard paused";
+    loading.querySelector("span").textContent = data.worker_running ? "The monitor is starting. This will only take a moment." : "Start DreamRender to view render jobs here.";
+    return;
+  }
+  const url = data.monitor_url || "";
+  if (url && state.dashboardLoadedUrl !== url) {
+    state.dashboardLoadedUrl = url;
+    loading.hidden = false;
+    frame.src = url;
+  }
 }
 
 function renderHealth(items) {
@@ -218,10 +251,7 @@ async function saveConfig() {
 document.addEventListener("click", async event => {
   const tab = event.target.closest(".tab");
   if (tab) {
-    document.querySelectorAll(".tab").forEach(button => button.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById(tab.dataset.tab).classList.add("active");
+    selectTab(tab.dataset.tab);
   }
 });
 
@@ -293,7 +323,10 @@ $("#toggle").addEventListener("click", async () => {
     render(state.data || {});
   }
 });
-$("#dashboard").addEventListener("click", () => post("/api/action", { action: "open_dashboard" }));
+$("#dashboard").addEventListener("click", () => selectTab("dashboard-panel"));
+$("#dashboard-frame").addEventListener("load", () => {
+  if (state.data?.worker_running && state.data?.monitor_running) $("#dashboard-loading").hidden = true;
+});
 $("#save-config").addEventListener("click", saveConfig);
 $("#repair").addEventListener("click", async () => {
   await post("/api/action", { action: "repair" });

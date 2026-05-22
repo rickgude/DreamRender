@@ -173,6 +173,12 @@ button.stop.is-loading:disabled {
   border-color: var(--ink);
   color: white;
 }
+.tab:disabled {
+  cursor: not-allowed;
+  background: #e3e9e6;
+  border-color: #d4ddd9;
+  color: #8b9698;
+}
 
 .tab-panel {
   display: none;
@@ -184,8 +190,8 @@ button.stop.is-loading:disabled {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-areas:
-    "slot1 slot1 slot1 slot1 slot2 slot2 slot2 slot2 slot3 slot3 slot3 slot3"
-    "slot4 slot4 slot4 slot4 slot4 slot5 slot5 slot5 slot5 slot5 slot5 slot5"
+    "slot1 slot1 slot1 slot1 slot1 slot1 slot2 slot2 slot2 slot3 slot3 slot3"
+    "slot4 slot4 slot4 slot4 slot5 slot5 slot5 slot5 slot5 slot5 slot5 slot5"
     "slot6 slot6 slot6 slot6 slot6 slot6 slot6 slot7 slot7 slot7 slot7 slot7";
   grid-auto-rows: auto;
   gap: 22px;
@@ -294,6 +300,12 @@ button.stop.is-loading:disabled {
 }
 .card-head h2 { margin-bottom: 0; }
 .body-copy { max-width: 60ch; line-height: 1.5; }
+.card[data-widget="plugin"] .body-copy {
+  max-width: 52ch;
+  font-size: 20px;
+  line-height: 1.42;
+  margin-bottom: 18px;
+}
 
 .inline-message[hidden] {
   display: none;
@@ -431,6 +443,45 @@ textarea {
   background: #111111;
   color: #f6f2e8;
   font: 13px/1.45 Consolas, "Cascadia Mono", monospace;
+}
+
+.dashboard-card {
+  position: relative;
+  min-height: calc(100vh - 210px);
+  overflow: hidden;
+}
+#dashboard-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 210px);
+  min-height: 720px;
+  border: 0;
+  background: var(--shell);
+}
+.dashboard-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--card);
+  color: var(--muted);
+  text-align: center;
+}
+.dashboard-loading[hidden] { display: none; }
+.dashboard-loading strong {
+  color: var(--ink);
+  font-size: 22px;
+}
+.dashboard-spinner {
+  width: 42px;
+  height: 42px;
+  border: 5px solid #dbe5e1;
+  border-top-color: var(--good);
+  border-radius: 999px;
+  animation: spin .75s linear infinite;
 }
 
 @media (max-width: 980px) {

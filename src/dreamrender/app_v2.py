@@ -336,8 +336,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
             self.state.stop()
             response_json(self, {"ok": True})
         elif action == "open_dashboard":
-            webbrowser.open(self.state.monitor_url())
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "url": self.state.monitor_url()})
         elif action == "open_queue":
             queue = Path(str(self.state.config["share"]))
             queue.mkdir(parents=True, exist_ok=True)
