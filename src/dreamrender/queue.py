@@ -22,12 +22,21 @@ OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{
 BROWSER_PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 CONVERTIBLE_PREVIEW_EXTENSIONS = {".exr", ".tif", ".tiff"}
 IMAGE_EXTENSIONS = BROWSER_PREVIEW_EXTENSIONS | CONVERTIBLE_PREVIEW_EXTENSIONS
-CODE_SIGNATURE = hashlib.sha1(
-    "|".join(
-        f"{path.name}:{path.stat().st_mtime_ns}:{path.stat().st_size}"
-        for path in sorted(Path(__file__).parent.glob("*.py"))
-    ).encode("utf-8")
-).hexdigest()[:10]
+
+
+def source_signature() -> str:
+    parts = []
+    for path in sorted(Path(__file__).parent.glob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+            digest = hashlib.sha1(source.encode("utf-8")).hexdigest()
+        except (OSError, UnicodeDecodeError):
+            continue
+        parts.append(f"{path.name}:{digest}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:10]
+
+
+CODE_SIGNATURE = source_signature()
 
 
 class ShareAccessError(RuntimeError):
@@ -1222,6 +1231,9 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
         worker["stale_active"] = bool(worker.get("active") and worker["state"] == "offline")
         worker["current_code_signature"] = CODE_SIGNATURE
         worker["code_current"] = worker.get("code_signature") == CODE_SIGNATURE
+        worker["stop_after_batch"] = worker_stop_requested(share, worker_id)
+        worker["restart_requested"] = worker_restart_requested(share, worker_id)
+        worker["stop_now_requested"] = worker_stop_now_requested(share, worker_id)
         if worker["state"] == "offline":
             worker["active"] = None
         workers.append(worker)
@@ -1244,6 +1256,9 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
                 "stale_active": False,
                 "current_code_signature": CODE_SIGNATURE,
                 "code_current": False,
+                "stop_after_batch": False,
+                "restart_requested": False,
+                "stop_now_requested": False,
             }
         )
     return workers

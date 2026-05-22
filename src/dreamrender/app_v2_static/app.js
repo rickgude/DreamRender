@@ -227,6 +227,7 @@ function renderDashboard(queue, appData) {
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
     const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : "";
+    const stopAfterBatch = Boolean(worker.stop_after_batch);
     return `<article class="dashboard-worker ${stateClass}" style="--worker-color:${color}">
       <span class="dashboard-worker-dot"></span>
       <div>
@@ -234,7 +235,9 @@ function renderDashboard(queue, appData) {
         <div class="muted">${esc(workerLabel(worker))}</div>
         <div class="dashboard-worker-actions">
           <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current ? "Restart" : "Restart needed"}</button>
-          <button data-dashboard-action="worker_stop" data-worker="${esc(worker.worker_id)}">Stop After Batch</button>
+          <button class="dashboard-toggle ${stopAfterBatch ? "active" : ""}" data-dashboard-action="worker_toggle_stop" data-worker="${esc(worker.worker_id)}" aria-pressed="${stopAfterBatch ? "true" : "false"}">
+            <span></span>Stop after batch
+          </button>
           <button data-dashboard-action="worker_stop_now" data-worker="${esc(worker.worker_id)}">Stop</button>
         </div>
       </div>
@@ -275,7 +278,7 @@ function renderDashboardJob(job) {
     <div class="dashboard-job-main" data-dashboard-toggle="${esc(job.id)}">
       <div>
         <div class="dashboard-job-title">
-          <button class="dashboard-job-drag drag-handle" type="button" title="Move job priority" aria-label="Move job priority"></button>
+          <button class="dashboard-job-drag drag-handle" type="button" draggable="true" title="Move job priority" aria-label="Move job priority"></button>
           <span class="dashboard-status ${statusClass}">${esc(statusLabel)}</span>
           <strong>${esc(job.name)}</strong>
         </div>
@@ -314,6 +317,15 @@ function renderDashboardFrames(job) {
     const worker = frame.worker_id ? ` style="--frame-color:${workerColor(frame.worker_id)}"` : "";
     return `<span class="${esc(frame.status || "queued")} ${frame.worker_id ? "worker-owned" : ""}"${worker}>${esc(frame.frame)}</span>`;
   }).join("")}</div>`;
+}
+
+function dashboardJobIds(list) {
+  return [...list.querySelectorAll(".dashboard-job")].map(job => job.dataset.jobId);
+}
+
+async function saveDashboardOrder(list) {
+  await post("/api/action", { action: "reorder", job_ids: dashboardJobIds(list) });
+  await refresh();
 }
 
 function renderHealth(items) {
@@ -505,6 +517,49 @@ $("#native-dashboard").addEventListener("pointerdown", event => {
   };
 });
 
+$("#native-dashboard").addEventListener("dragstart", event => {
+  const handle = event.target.closest(".dashboard-job-drag");
+  if (!handle) return;
+  const job = handle.closest(".dashboard-job");
+  const list = handle.closest(".dashboard-job-list");
+  if (!job || !list) return;
+  state.dashboardDrag = { job, handle, list, active: true, native: true };
+  job.classList.add("dragging");
+  list.classList.add("is-reordering");
+  document.body.classList.add("is-dragging-dashboard");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", job.dataset.jobId || "");
+});
+
+$("#native-dashboard").addEventListener("dragover", event => {
+  const drag = state.dashboardDrag;
+  if (!drag?.native) return;
+  event.preventDefault();
+  const target = event.target.closest(".dashboard-job");
+  if (!target || target === drag.job || target.parentElement !== drag.list) return;
+  const rect = target.getBoundingClientRect();
+  drag.list.insertBefore(drag.job, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+});
+
+$("#native-dashboard").addEventListener("drop", event => {
+  if (state.dashboardDrag?.native) event.preventDefault();
+});
+
+$("#native-dashboard").addEventListener("dragend", async () => {
+  const drag = state.dashboardDrag;
+  if (!drag?.native) return;
+  drag.job.classList.remove("dragging");
+  drag.list.classList.remove("is-reordering");
+  document.body.classList.remove("is-dragging-dashboard");
+  const list = drag.list;
+  state.dashboardDrag = null;
+  try {
+    await saveDashboardOrder(list);
+  } catch (error) {
+    showAppFeedback("error", error.message || "Could not reorder jobs.");
+  }
+});
+
 document.addEventListener("pointermove", event => {
   const drag = state.dashboardDrag;
   if (!drag) return;
@@ -530,13 +585,12 @@ document.addEventListener("pointerup", async () => {
   drag.job.classList.remove("dragging");
   drag.list.classList.remove("is-reordering");
   document.body.classList.remove("is-dragging-dashboard");
-  const jobIds = [...drag.list.querySelectorAll(".dashboard-job")].map(job => job.dataset.jobId);
   const changed = drag.active;
+  const list = drag.list;
   state.dashboardDrag = null;
   if (!changed) return;
   try {
-    await post("/api/action", { action: "reorder", job_ids: jobIds });
-    await refresh();
+    await saveDashboardOrder(list);
   } catch (error) {
     showAppFeedback("error", error.message || "Could not reorder jobs.");
   }

@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from .queue import (
     CODE_SIGNATURE,
     Share,
+    clear_worker_stop_request,
     get_job_detail,
     queue_snapshot,
     repair_queue,
@@ -27,6 +28,7 @@ from .queue import (
     requeue_failed,
     set_job_priorities,
     set_job_status,
+    worker_stop_requested,
 )
 
 
@@ -378,7 +380,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
             job_id = str(payload.get("job_id", ""))
             result = repair_queue(self.state.share(), job_id or None, min_output_age_seconds=0)
             response_json(self, {"ok": True, "repair": result})
-        elif action in {"worker_restart", "worker_stop", "worker_stop_now"}:
+        elif action in {"worker_restart", "worker_toggle_stop", "worker_stop_now"}:
             worker_id = str(payload.get("worker_id", ""))
             if not worker_id:
                 response_json(self, {"ok": False, "message": "Missing worker id."}, HTTPStatus.BAD_REQUEST)
@@ -388,7 +390,10 @@ class AppV2Handler(BaseHTTPRequestHandler):
             elif action == "worker_stop_now":
                 request_worker_stop_now(self.state.share(), worker_id)
             else:
-                request_worker_stop_after_batch(self.state.share(), worker_id)
+                if worker_stop_requested(self.state.share(), worker_id):
+                    clear_worker_stop_request(self.state.share(), worker_id)
+                else:
+                    request_worker_stop_after_batch(self.state.share(), worker_id)
             response_json(self, {"ok": True})
         elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "open_output"}:
             job_id = str(payload.get("job_id", ""))
