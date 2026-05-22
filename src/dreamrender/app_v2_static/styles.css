@@ -592,6 +592,10 @@ textarea {
   align-items: center;
   margin-top: 10px;
 }
+.dashboard-worker-actions {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
 .dashboard-worker-actions button {
   min-height: 28px;
   padding: 0 10px;
