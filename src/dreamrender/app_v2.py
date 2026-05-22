@@ -15,7 +15,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .queue import CODE_SIGNATURE, Share, queue_snapshot, repair_queue
+from .queue import (
+    CODE_SIGNATURE,
+    Share,
+    get_job_detail,
+    queue_snapshot,
+    repair_queue,
+    request_worker_restart,
+    request_worker_stop_after_batch,
+    request_worker_stop_now,
+    requeue_failed,
+    set_job_status,
+)
 
 
 CONFIG_PATH = Path.home() / "DreamRenderApp.json"
@@ -251,6 +262,22 @@ class AppV2State:
         appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         return [prefs / "plugins" / "DreamRender" for prefs in sorted((appdata / "Maxon").glob(f"Maxon Cinema 4D {C4D_VERSION}_*"), reverse=True)]
 
+    def open_output_folder(self, job_id: str) -> None:
+        job = get_job_detail(self.share(), job_id)
+        output_text = str(job.get("output") or "")
+        if not output_text:
+            raise FileNotFoundError("Job has no output path.")
+        output = Path(output_text)
+        folder = output.parent if output.suffix else output
+        while not folder.exists() and folder != folder.parent:
+            folder = folder.parent
+        if not folder.exists():
+            raise FileNotFoundError(folder)
+        if os.name == "nt":
+            os.startfile(str(folder))  # type: ignore[attr-defined]
+        else:
+            webbrowser.open(folder.as_uri())
+
     def health(self) -> list[dict[str, object]]:
         share = Path(str(self.config["share"]))
         c4d = Path(str(self.config["c4d"]))
@@ -324,11 +351,12 @@ class AppV2Handler(BaseHTTPRequestHandler):
             response_json(self, {"ok": True})
             return
         if parsed.path == "/api/action":
-            self.handle_action(str(payload.get("action", "")))
+            self.handle_action(payload)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
-    def handle_action(self, action: str) -> None:
+    def handle_action(self, payload: dict[str, object]) -> None:
+        action = str(payload.get("action", ""))
         if action == "start":
             self.state.start()
             response_json(self, {"ok": True})
@@ -345,6 +373,42 @@ class AppV2Handler(BaseHTTPRequestHandler):
         elif action == "repair":
             result = repair_queue(self.state.share(), min_output_age_seconds=0)
             response_json(self, {"ok": True, "repair": result})
+        elif action == "repair_job":
+            job_id = str(payload.get("job_id", ""))
+            result = repair_queue(self.state.share(), job_id or None, min_output_age_seconds=0)
+            response_json(self, {"ok": True, "repair": result})
+        elif action in {"worker_restart", "worker_stop", "worker_stop_now"}:
+            worker_id = str(payload.get("worker_id", ""))
+            if not worker_id:
+                response_json(self, {"ok": False, "message": "Missing worker id."}, HTTPStatus.BAD_REQUEST)
+                return
+            if action == "worker_restart":
+                request_worker_restart(self.state.share(), worker_id)
+            elif action == "worker_stop_now":
+                request_worker_stop_now(self.state.share(), worker_id)
+            else:
+                request_worker_stop_after_batch(self.state.share(), worker_id)
+            response_json(self, {"ok": True})
+        elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "open_output"}:
+            job_id = str(payload.get("job_id", ""))
+            if not job_id:
+                response_json(self, {"ok": False, "message": "Missing job id."}, HTTPStatus.BAD_REQUEST)
+                return
+            if action == "pause":
+                set_job_status(self.state.share(), job_id, "paused")
+            elif action == "resume":
+                set_job_status(self.state.share(), job_id, "queued")
+            elif action == "drain":
+                set_job_status(self.state.share(), job_id, "draining")
+            elif action == "cancel":
+                set_job_status(self.state.share(), job_id, "cancelled")
+            elif action == "delete":
+                set_job_status(self.state.share(), job_id, "archived")
+            elif action == "requeue":
+                requeue_failed(self.state.share(), job_id)
+            elif action == "open_output":
+                self.state.open_output_folder(job_id)
+            response_json(self, {"ok": True})
         elif action == "install_plugin":
             ok, message = self.state.install_plugin()
             response_json(self, {"ok": ok, "message": message}, HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST)

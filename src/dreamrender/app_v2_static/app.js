@@ -2,7 +2,6 @@ const state = {
   data: null,
   drag: null,
   toggleBusy: null,
-  dashboardLoadedUrl: "",
 };
 const layoutKey = "dreamrender.app.bentoLayout.v3";
 
@@ -14,6 +13,27 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({
   '"': "&quot;",
   "'": "&#39;",
 }[char]));
+const workerPalette = ["#ffd43d", "#58c981", "#8b63f6", "#ff5538", "#ffb13d", "#41d8a1", "#a16cff", "#ff7a59"];
+const statusColors = {
+  done: "#65cd8b",
+  rendering: "#ff8b3d",
+  failed: "#ed7884",
+  queued: "#dfe7e2",
+};
+
+function hashValue(value) {
+  let hash = 0;
+  for (const char of String(value || "")) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  return Math.abs(hash);
+}
+
+function workerColor(workerId) {
+  return workerPalette[hashValue(workerId) % workerPalette.length];
+}
+
+function statusText(counts) {
+  return Object.entries(counts || {}).sort().map(([key, value]) => `${key}: ${value}`).join("  ");
+}
 
 async function post(path, payload) {
   const response = await fetch(path, {
@@ -161,27 +181,110 @@ function render(data) {
   renderHealth(data.health || []);
   renderQueue(data.queue || {});
   renderGpus(data.gpus || [], data.gpu_message);
-  renderDashboard(data);
+  renderDashboard(data.queue || {}, data);
   $("#log").value = (data.worker_log || []).join("\n");
 }
 
-function renderDashboard(data) {
-  const frame = $("#dashboard-frame");
-  const loading = $("#dashboard-loading");
-  if (!data.worker_running || !data.monitor_running) {
-    state.dashboardLoadedUrl = "";
-    frame.removeAttribute("src");
-    loading.hidden = false;
-    loading.querySelector("strong").textContent = data.worker_running ? "Dashboard starting..." : "Dashboard paused";
-    loading.querySelector("span").textContent = data.worker_running ? "The monitor is starting. This will only take a moment." : "Start DreamRender to view render jobs here.";
+function jobState(job) {
+  const counts = job.counts || {};
+  if ((counts.failed || 0) > 0 || job.status === "cancelled") return ["failed", "Error"];
+  if (job.status === "done" || job.status === "archived") return ["done", "Done"];
+  if ((counts.rendering || 0) > 0) return ["rendering", "Rendering"];
+  if (job.status === "paused") return ["queued", "Paused"];
+  if (job.status === "draining") return ["rendering", "Draining"];
+  return ["queued", "Queued"];
+}
+
+function workerLabel(worker) {
+  const code = worker.code_current ? `code ${worker.code_signature || ""}` : "restart needed";
+  const active = worker.active || null;
+  if (active) {
+    const frameText = active.start_frame != null && active.end_frame != null ? `frames ${active.start_frame}-${active.end_frame}` : `frame ${active.frame}`;
+    return `job ${active.job_id}, ${frameText} - ${code}`;
+  }
+  if (worker.state === "online") return `idle - ${code}`;
+  if (worker.state === "heartbeat_lost") return `heartbeat lost - ${code}`;
+  return worker.last_seen_seconds == null ? "offline" : `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
+}
+
+function formatSeconds(seconds) {
+  if (seconds == null) return "--";
+  seconds = Math.max(0, Math.round(seconds));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
+function renderDashboard(queue, appData) {
+  const workers = queue.workers || [];
+  const jobs = queue.jobs || [];
+  const oldWorkers = workers.filter(worker => !worker.code_current);
+  const repair = queue.repair || {};
+  $("#dashboard-health").textContent = appData.worker_running
+    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  Code: ${queue.code_signature || "--"}${oldWorkers.length ? ` - ${oldWorkers.length} worker(s) need restart.` : ""}`
+    : "Start DreamRender to view live workers and jobs.";
+  $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
+    const color = workerColor(worker.worker_id);
+    const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : "";
+    return `<article class="dashboard-worker ${stateClass}" style="--worker-color:${color}">
+      <span class="dashboard-worker-dot"></span>
+      <div>
+        <strong>${esc(worker.worker_id)}</strong>
+        <div class="muted">${esc(workerLabel(worker))}</div>
+        <div class="dashboard-worker-actions">
+          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current ? "Restart" : "Restart (needed)"}</button>
+          <button data-dashboard-action="worker_stop" data-worker="${esc(worker.worker_id)}">Stop After Batch</button>
+          <button data-dashboard-action="worker_stop_now" data-worker="${esc(worker.worker_id)}">Stop</button>
+        </div>
+      </div>
+    </article>`;
+  }).join("") : `<div class="dashboard-empty"><strong>No workers yet</strong><span>Start DreamRender on a render node.</span></div>`;
+  if (queue.error) {
+    $("#dashboard-jobs").innerHTML = `<div class="dashboard-error">${esc(queue.error)}</div>`;
     return;
   }
-  const url = data.monitor_url ? `${data.monitor_url}?embed=1&v=6` : "";
-  if (url && state.dashboardLoadedUrl !== url) {
-    state.dashboardLoadedUrl = url;
-    loading.hidden = false;
-    frame.src = url;
-  }
+  $("#dashboard-jobs").className = "dashboard-job-list";
+  $("#dashboard-jobs").innerHTML = jobs.length ? jobs.map(renderDashboardJob).join("") : `
+    <div class="dashboard-empty">
+      <strong>No jobs in the queue yet.</strong>
+      <span>Submit from Cinema 4D with Extensions &gt; DreamRender Submit Render.</span>
+    </div>`;
+}
+
+function renderDashboardJob(job) {
+  const [statusClass, statusLabel] = jobState(job);
+  const color = statusColors[statusClass] || statusColors.queued;
+  const counts = job.counts || {};
+  const isDone = job.status === "done" || job.status === "archived";
+  const hasRendering = (counts.rendering || 0) > 0;
+  const hasQueued = (counts.queued || 0) > 0 || (counts.failed || 0) > 0;
+  const canCancel = !isDone && job.status !== "cancelled" && (hasRendering || hasQueued || job.status === "paused" || job.status === "draining");
+  const actions = [
+    `<button data-dashboard-action="open_output" data-job="${esc(job.id)}">Open Render Folder</button>`,
+    `<button data-dashboard-action="repair_job" data-job="${esc(job.id)}">Repair</button>`,
+  ];
+  if (job.status === "paused") actions.push(`<button data-dashboard-action="resume" data-job="${esc(job.id)}">Resume</button>`);
+  else if (!isDone && job.status !== "cancelled") actions.push(`<button data-dashboard-action="pause" data-job="${esc(job.id)}">Pause</button>`);
+  if (hasRendering) actions.push(`<button data-dashboard-action="drain" data-job="${esc(job.id)}">Stop After Batch</button>`);
+  if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button data-dashboard-action="requeue" data-job="${esc(job.id)}">Requeue Failed</button>`);
+  if (canCancel) actions.push(`<button data-dashboard-action="cancel" data-job="${esc(job.id)}">Cancel</button>`);
+  if (job.status !== "archived") actions.push(`<button data-dashboard-action="delete" data-job="${esc(job.id)}">Delete</button>`);
+  return `<article class="dashboard-job" style="--status-color:${color}">
+    <div class="dashboard-job-main">
+      <div>
+        <div class="dashboard-job-title">
+          <span class="dashboard-status ${statusClass}">${esc(statusLabel)}</span>
+          <strong>${esc(job.name)}</strong>
+        </div>
+        <div class="dashboard-meta">${Number(job.progress || 0).toFixed(1)}% &middot; ${esc(job.status || "queued")} &middot; ${esc(statusText(counts))}</div>
+        <div class="dashboard-progress"><div style="width:${Number(job.progress || 0).toFixed(1)}%"></div></div>
+      </div>
+      <div class="dashboard-job-actions">${actions.join("")}</div>
+    </div>
+  </article>`;
 }
 
 function renderHealth(items) {
@@ -325,8 +428,24 @@ $("#toggle").addEventListener("click", async () => {
   }
 });
 $("#dashboard").addEventListener("click", () => selectTab("dashboard-panel"));
-$("#dashboard-frame").addEventListener("load", () => {
-  if (state.data?.worker_running && state.data?.monitor_running) $("#dashboard-loading").hidden = true;
+$("#native-dashboard").addEventListener("click", async event => {
+  const button = event.target.closest("[data-dashboard-action]");
+  if (!button) return;
+  button.disabled = true;
+  button.classList.add("is-loading");
+  try {
+    await post("/api/action", {
+      action: button.dataset.dashboardAction,
+      job_id: button.dataset.job || "",
+      worker_id: button.dataset.worker || "",
+    });
+    await refresh();
+  } catch (error) {
+    showAppFeedback("error", error.message || "Dashboard action failed.");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-loading");
+  }
 });
 $("#save-config").addEventListener("click", saveConfig);
 $("#repair").addEventListener("click", async () => {

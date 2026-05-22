@@ -94,14 +94,26 @@
     </section>
 
     <section id="dashboard-panel" class="tab-panel">
-      <section class="dashboard-card card">
-        <div class="dashboard-loading" id="dashboard-loading">
-          <div class="dashboard-spinner"></div>
-          <strong>Dashboard loading...</strong>
-          <span>Start DreamRender to view render jobs here.</span>
-        </div>
-        <iframe id="dashboard-frame" title="DreamRender Dashboard"></iframe>
-      </section>
+      <div class="native-dashboard" id="native-dashboard">
+        <aside class="dashboard-workers">
+          <h2>Workers</h2>
+          <div id="dashboard-workers"></div>
+        </aside>
+        <section class="dashboard-jobs">
+          <div class="dashboard-head">
+            <h2>Jobs</h2>
+            <div class="dashboard-legend">
+              <span><i class="done"></i>Done</span>
+              <span><i class="rendering"></i>Rendering</span>
+              <span><i class="failed"></i>Error</span>
+              <span><i class="queued"></i>Queued</span>
+              <button data-dashboard-action="repair">Repair Queue</button>
+            </div>
+          </div>
+          <div id="dashboard-health" class="dashboard-health"></div>
+          <div id="dashboard-jobs"></div>
+        </section>
+      </div>
     </section>
 
     <section id="activity" class="tab-panel">
