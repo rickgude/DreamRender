@@ -484,6 +484,9 @@ input {
   counter-increment: help-step;
   display: grid;
   grid-template-columns: 38px 1fr;
+  grid-template-areas:
+    "number title"
+    "number text";
   gap: 14px;
   align-items: start;
   padding: 16px;
@@ -493,6 +496,7 @@ input {
 }
 .help-steps li::before {
   content: counter(help-step);
+  grid-area: number;
   display: grid;
   place-items: center;
   width: 38px;
@@ -508,11 +512,19 @@ input {
   margin-bottom: 5px;
   font-size: 15px;
 }
+.help-steps strong {
+  grid-area: title;
+  margin-bottom: 0;
+}
 .help-steps span,
 .help-table span {
   display: block;
   color: var(--muted);
   line-height: 1.45;
+}
+.help-steps span {
+  grid-area: text;
+  max-width: 58ch;
 }
 .help-table {
   display: grid;
