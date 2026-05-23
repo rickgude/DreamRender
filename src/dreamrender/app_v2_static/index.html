@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DreamRender App</title>
-  <link rel="stylesheet" href="/styles.css?v=14">
+  <link rel="stylesheet" href="/styles.css?v=15">
 </head>
 <body>
   <main class="shell">
@@ -23,6 +23,7 @@
       <button class="tab active" data-tab="setup">Setup</button>
       <button class="tab" data-tab="dashboard-panel" id="dashboard-tab" disabled>Dashboard</button>
       <button class="tab" data-tab="activity">Activity</button>
+      <button class="tab" data-tab="help">Help</button>
     </nav>
 
     <section id="setup" class="tab-panel active">
@@ -137,7 +138,45 @@
       </section>
       </div>
     </section>
+
+    <section id="help" class="tab-panel">
+      <div class="help-grid">
+        <section class="card stack help-card">
+          <h2>Instructions</h2>
+          <ol class="help-steps">
+            <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the Cinema 4D Commandline path, and install the Cinema 4D plugin.</span></li>
+            <li><strong>Start DreamRender.</strong><span>Use the main toggle at the top. When it is green, this machine can render and monitor jobs.</span></li>
+            <li><strong>Submit from Cinema 4D.</strong><span>Open the DreamRender submitter from Cinema 4D, check the scene, then submit the project.</span></li>
+            <li><strong>Watch the Dashboard.</strong><span>Rendering jobs, workers, frame ownership, progress, and repair actions live in the Dashboard tab.</span></li>
+          </ol>
+        </section>
+
+        <section class="card stack help-card">
+          <h2>Troubleshooting</h2>
+          <div class="help-table">
+            <div><strong>Plugin missing</strong><span>Close Cinema 4D, click Install C4D Plugin, then start Cinema 4D again.</span></div>
+            <div><strong>Worker offline</strong><span>Open DreamRender on that machine and start it again. If needed, use Restart in the Dashboard.</span></div>
+            <div><strong>Nothing renders</strong><span>Check Health, queue permissions, renderer licenses, and that every worker can access the same project paths.</span></div>
+            <div><strong>Wrong output path</strong><span>DreamRender uses Cinema 4D Render Settings. Make sure all machines map projects and output folders identically.</span></div>
+            <div><strong>EXR preview missing</strong><span>EXR files render fine, but previews need ImageMagick, OpenImageIO, or ffmpeg on the monitor machine.</span></div>
+            <div><strong>Failed frames</strong><span>Fix the scene or machine problem first, then use Repair or requeue from the Dashboard.</span></div>
+          </div>
+        </section>
+
+        <section class="card stack help-card about-card">
+          <h2>About</h2>
+          <p>DreamRender is lightweight render farm software for small Cinema 4D 2026 studios using Redshift or Octane.</p>
+          <p>It uses a shared folder as the queue, so machines can join, leave, pick up batches, and report progress without a central database server.</p>
+          <div class="about-facts">
+            <span>Renderer support: Redshift and Octane</span>
+            <span>License: MIT</span>
+            <span>App: local desktop control surface</span>
+            <span>Submitter: Cinema 4D plugin</span>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
-  <script src="/app.js?v=14"></script>
+  <script src="/app.js?v=15"></script>
 </body>
 </html>
