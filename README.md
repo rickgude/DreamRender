@@ -42,6 +42,10 @@ That guide covers:
   queue write access, worker heartbeat loss, failed frames, and stale locks.
 - Failed frames stay failed until you intentionally repair or requeue them, so
   broken frames do not loop forever in the background.
+- Failed jobs show grouped failure reasons, retry controls, and a manual
+  verified-done escape hatch for outputs you have checked yourself.
+- Submit history records source-scene timestamps, renderer, preflight summary,
+  and job-scene copy paths so you can verify which scene version rendered.
 - Cinema 4D output paths are preserved from Render Settings, including common
   Cinema 4D tokens.
 
@@ -101,6 +105,10 @@ The submitter reads the active Cinema 4D Render Settings for:
 - Redshift, Octane, and multipass settings
 - marked takes and take-specific render settings
 
+The scene checker also validates the DreamRender share, output folder
+write-access, cache/proxy assets, external asset paths, known workers, and
+whether the source scene changed since its last DreamRender submission.
+
 DreamRender saves the current scene, then creates a separate job-scene copy in a
 `DreamRenderJobs` folder near the project. Workers render that copy, while output
 still goes to the path set in Cinema 4D Render Settings.
@@ -128,6 +136,8 @@ The dashboard is opened from the DreamRender app. It shows:
 - logs and browser-friendly previews
 - archive, requeue, cancel, pause, resume, and priority controls
 - drag priority controls plus explicit Up/Down buttons as a reliable fallback
+- failure summaries with `Retry Failed` and `Mark Failed Done`
+- submit metadata for source scene, renderer, preflight summary, and timestamps
 
 PNG, JPG, WebP, and GIF previews display directly in the browser. EXR/TIFF files
 need a converter on the monitor machine for thumbnails, such as ImageMagick,

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DreamRender App</title>
-  <link rel="stylesheet" href="/styles.css?v=15">
+  <link rel="stylesheet" href="/styles.css?v=16">
 </head>
 <body>
   <main class="shell">
@@ -146,8 +146,8 @@
           <ol class="help-steps">
             <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the Cinema 4D Commandline path, and install the Cinema 4D plugin.</span></li>
             <li><strong>Start DreamRender.</strong><span>Use the main toggle at the top. When it is green, this machine can render and monitor jobs.</span></li>
-            <li><strong>Submit from Cinema 4D.</strong><span>Open the DreamRender submitter from Cinema 4D, check the scene, then submit the project.</span></li>
-            <li><strong>Watch the Dashboard.</strong><span>Rendering jobs, workers, frame ownership, progress, and repair actions live in the Dashboard tab.</span></li>
+            <li><strong>Submit from Cinema 4D.</strong><span>Open the DreamRender submitter, run Check Scene, review warnings, then submit. DreamRender stores submit history with the job.</span></li>
+            <li><strong>Watch the Dashboard.</strong><span>Rendering jobs, worker confidence, frame ownership, progress, failures, and repair actions live in the Dashboard tab.</span></li>
           </ol>
         </section>
 
@@ -159,7 +159,8 @@
             <div><strong>Nothing renders</strong><span>Check Health, queue permissions, renderer licenses, and that every worker can access the same project paths.</span></div>
             <div><strong>Wrong output path</strong><span>DreamRender uses Cinema 4D Render Settings. Make sure all machines map projects and output folders identically.</span></div>
             <div><strong>EXR preview missing</strong><span>EXR files render fine, but previews need ImageMagick, OpenImageIO, or ffmpeg on the monitor machine.</span></div>
-            <div><strong>Failed frames</strong><span>Fix the scene or machine problem first, then use Repair or requeue from the Dashboard.</span></div>
+            <div><strong>Failed frames</strong><span>Read the failure summary, fix the cause, then use Retry Failed. Use Mark Failed Done only when outputs are verified.</span></div>
+            <div><strong>Old scene rendered</strong><span>The submitter saves first and records source-scene time. Check the job metadata if you suspect an old scene copy.</span></div>
           </div>
         </section>
 
@@ -172,11 +173,12 @@
             <span>License: MIT</span>
             <span>App: local desktop control surface</span>
             <span>Submitter: Cinema 4D plugin</span>
+            <span>Installer path: app launcher, plugin installer, no console workflow</span>
           </div>
         </section>
       </div>
     </section>
   </main>
-  <script src="/app.js?v=15"></script>
+  <script src="/app.js?v=16"></script>
 </body>
 </html>

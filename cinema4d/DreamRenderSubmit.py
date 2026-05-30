@@ -20,6 +20,8 @@ from c4d import gui
 DEFAULT_SHARE = r"\\RenderServer\DreamRender"
 DEFAULT_JOB_FOLDER = "DreamRenderJobs"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), "DreamRenderSubmit.json")
+SUBMIT_HISTORY_FILENAME = "submit_history.json"
+CACHE_EXTENSIONS = {".abc", ".vdb", ".rs", ".ass", ".usd", ".usda", ".usdc", ".bgeo", ".bgeo.sc"}
 
 IDC_SHARE = 1001
 IDC_NAME = 1002
@@ -123,6 +125,73 @@ def get_document_name(doc):
     if not name.lower().endswith(".c4d"):
         name += ".c4d"
     return name
+
+
+def source_scene_path(doc):
+    folder = doc.GetDocumentPath()
+    if not folder:
+        return ""
+    return os.path.join(folder, get_document_name(doc))
+
+
+def path_mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except Exception:
+        return None
+
+
+def document_has_unsaved_changes(doc):
+    try:
+        return bool(doc.IsDirty(c4d.DIRTYFLAGS_DATA))
+    except Exception:
+        pass
+    try:
+        return bool(doc.GetDirty(c4d.DIRTYFLAGS_DATA))
+    except Exception:
+        pass
+    return False
+
+
+def history_path_for_doc(doc):
+    project = get_project_folder(doc)
+    return os.path.join(project, DEFAULT_JOB_FOLDER, SUBMIT_HISTORY_FILENAME)
+
+
+def read_submit_history(doc):
+    try:
+        with open(history_path_for_doc(doc), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {"submits": []}
+
+
+def last_submit_for_scene(doc):
+    history = read_submit_history(doc)
+    scene = os.path.normcase(os.path.abspath(source_scene_path(doc) or ""))
+    matches = []
+    for entry in history.get("submits", []):
+        try:
+            entry_scene = os.path.normcase(os.path.abspath(str(entry.get("source_scene") or "")))
+        except Exception:
+            entry_scene = ""
+        if entry_scene and entry_scene == scene:
+            matches.append(entry)
+    if not matches:
+        return None
+    return sorted(matches, key=lambda item: str(item.get("submitted_at") or ""))[-1]
+
+
+def append_submit_history(doc, entry):
+    path = history_path_for_doc(doc)
+    history = read_submit_history(doc)
+    submits = list(history.get("submits", []))
+    submits.append(entry)
+    history["submits"] = submits[-80:]
+    write_json_atomic(path, history)
 
 
 class ConfirmSaveDialog(gui.GeDialog):
@@ -911,9 +980,12 @@ def output_folder_check(output):
     if output_folder and has_c4d_tokens(output_folder):
         return CHECK_OK, "Cinema 4D token path", output
     if output_folder and os.path.isdir(output_folder):
+        writable, reason = probe_writable_folder(output_folder)
+        if not writable:
+            return CHECK_ERROR, "output folder is not writable", "%s\n%s" % (output_folder, reason)
         if output_folder != output:
-            return CHECK_OK, "output folder exists", output_folder
-        return CHECK_OK, "folder exists", output_folder
+            return CHECK_OK, "output folder exists and is writable", output_folder
+        return CHECK_OK, "folder exists and is writable", output_folder
     if output_folder:
         return CHECK_WARNING, "folder does not exist yet", output_folder
     return CHECK_WARNING, "path has no folder", output
@@ -951,6 +1023,60 @@ def marked_take_output_check(doc, marked_takes, renderer=""):
     return level, "marked take output issue", "; ".join(details[:3])
 
 
+def history_check(doc):
+    scene = source_scene_path(doc)
+    if not scene:
+        return CHECK_WARNING, "no saved scene history yet", "Save the scene once before submitting."
+    if document_has_unsaved_changes(doc):
+        return CHECK_WARNING, "scene has unsaved changes", "DreamRender will ask to save before submitting."
+    last = last_submit_for_scene(doc)
+    if not last:
+        return CHECK_OK, "no previous DreamRender submit", "This scene has not been submitted from this project folder yet."
+    current_mtime = path_mtime(scene)
+    last_mtime = last.get("source_scene_mtime")
+    if current_mtime is not None and last_mtime is not None and float(current_mtime) > float(last_mtime) + 1:
+        return CHECK_WARNING, "scene changed since last submit", "Last submit: %s" % (last.get("submitted_at") or "unknown")
+    return CHECK_OK, "scene matches last submit timestamp", "Last submit: %s" % (last.get("submitted_at") or "unknown")
+
+
+def cache_asset_summary(doc):
+    assets, asset_error = collect_scene_assets(doc)
+    if asset_error:
+        return CHECK_WARNING, "could not inspect caches", str(asset_error)
+    project = get_project_folder(doc)
+    document_folder = doc.GetDocumentPath()
+    cache_paths = []
+    external_cache_paths = []
+    for asset in assets:
+        path = asset_text(asset, ("filename", "assetname", "name", "url", "nodePath"))
+        if not path:
+            continue
+        normalized = normalize_asset_path(path, project)
+        lowered = normalized.lower()
+        if not any(lowered.endswith(extension) for extension in CACHE_EXTENSIONS):
+            continue
+        cache_paths.append(normalized)
+        if is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
+            external_cache_paths.append(normalized)
+    if external_cache_paths:
+        return CHECK_WARNING, "cache/proxy paths outside project", "Workers need identical mappings:\n%s" % "\n".join(external_cache_paths[:8])
+    if cache_paths:
+        return CHECK_OK, "cache/proxy assets found", "%d cache/proxy assets checked" % len(cache_paths)
+    return CHECK_OK, "no cache/proxy assets reported", ""
+
+
+def worker_share_check(share):
+    if not share or not os.path.isdir(share):
+        return CHECK_WARNING, "workers cannot be checked yet", "DreamRender share is not available."
+    workers_dir = os.path.join(share, "workers")
+    if not os.path.isdir(workers_dir):
+        return CHECK_WARNING, "no workers have checked in yet", workers_dir
+    workers = [name for name in os.listdir(workers_dir) if name.lower().endswith(".json")]
+    if workers:
+        return CHECK_OK, "workers have checked in", "%d known worker(s)" % len(workers)
+    return CHECK_WARNING, "no workers have checked in yet", workers_dir
+
+
 def scene_report_step_builders(doc, share, output, start, end, chunk_size, submit_marked_takes):
     marked_takes = get_marked_takes(doc) if submit_marked_takes else []
     take_driven = bool(marked_takes) and marked_takes_have_different_render_settings(doc, marked_takes)
@@ -968,6 +1094,10 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
         else:
             level, message, info = CHECK_ERROR, "scene not saved", "Save the Cinema 4D file once before submitting"
         return {"label": "PROJECT", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def history_row():
+        level, message, info = history_check(doc)
+        return {"label": "HISTORY", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
 
     def textures_row():
         assets, asset_error = collect_scene_assets(doc)
@@ -998,6 +1128,10 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
     def render_engine_row():
         level, message, info = render_engine_info(doc)
         return {"label": "RENDERENGINE", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
+    def cache_row():
+        level, message, info = cache_asset_summary(doc)
+        return {"label": "CACHE", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
 
     def fps_row():
         level, message, info = fps_info(doc)
@@ -1053,6 +1187,10 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
             level, message, info = CHECK_ERROR, "DreamRender share missing", ""
         return {"label": "QUEUE", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
 
+    def workers_row():
+        level, message, info = worker_share_check(share)
+        return {"label": "WORKERS", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
+
     def takes_row():
         if submit_marked_takes:
             if not marked_takes:
@@ -1075,7 +1213,9 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
     return [
         ("CAMERA", camera_row),
         ("PROJECT", project_row),
+        ("HISTORY", history_row),
         ("TEXTURES", textures_row),
+        ("CACHE", cache_row),
         ("RENDERENGINE", render_engine_row),
         ("FPS", fps_row),
         ("OUTPUT", output_row),
@@ -1085,6 +1225,7 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
         ("RESOLUTION", resolution_row),
         ("BATCH", batch_row),
         ("QUEUE", queue_row),
+        ("WORKERS", workers_row),
         ("TAKES", takes_row),
     ]
 
@@ -1225,6 +1366,8 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
 
     if document_folder:
         add_check(checks, CHECK_OK, "Scene has been saved", os.path.join(document_folder, document_name))
+        level, message, detail = history_check(doc)
+        add_check(checks, level, message, detail)
     else:
         add_check(checks, CHECK_ERROR, "Scene has not been saved", "Save the Cinema 4D document once before submitting.")
 
@@ -1238,6 +1381,9 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
         add_check(checks, CHECK_ERROR, "DreamRender share is not accessible", share)
     else:
         add_check(checks, CHECK_ERROR, "DreamRender share is missing", "Choose the shared DreamRender queue folder.")
+
+    level, message, detail = worker_share_check(share)
+    add_check(checks, level, message, detail)
 
     if document_folder:
         jobs_root = os.path.join(project, DEFAULT_JOB_FOLDER)
@@ -1310,6 +1456,8 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
                 "Assets outside the project folder",
                 "Workers need the same path mapping for these files:\n%s" % "\n".join(external[:12]),
             )
+        level, message, detail = cache_asset_summary(doc)
+        add_check(checks, level, message, detail)
 
     return checks
 
@@ -1534,6 +1682,7 @@ class DreamRenderDialog(gui.GeDialog):
         render_engine, render_engine_info_text = detect_render_engine(self.doc)
         chunk_size = max(1, self.GetInt32(IDC_CHUNK_SIZE))
         checks = run_scene_checks(self.doc, share, output, start, end, chunk_size, submit_marked_takes)
+        preflight_summary = check_summary_line(checks)
         if has_check_level(checks, CHECK_ERROR):
             gui.MessageDialog(format_checks(checks, "DreamRender cannot submit this scene yet"))
             return
@@ -1545,6 +1694,8 @@ class DreamRenderDialog(gui.GeDialog):
             return
         if not save_current_document(self.doc):
             return
+        source_scene = source_scene_path(self.doc)
+        source_scene_mtime = path_mtime(source_scene)
 
         project = get_project_folder(self.doc)
         jobs_root = os.path.join(project, DEFAULT_JOB_FOLDER)
@@ -1574,6 +1725,21 @@ class DreamRenderDialog(gui.GeDialog):
                 return
 
         try:
+            common_metadata = {
+                "project_folder": project,
+                "document_name": get_document_name(self.doc),
+                "source_scene": source_scene,
+                "source_scene_mtime": source_scene_mtime,
+                "source_scene_saved_at": utc_now(),
+                "submitted_by": os.environ.get("USERNAME") or os.environ.get("USER") or "",
+                "submitted_machine": os.environ.get("COMPUTERNAME") or "",
+                "submitter_version": "DreamRender C4D 2026",
+                "preflight_summary": preflight_summary,
+                "output_source": output_source,
+                "frame_source": frame_source,
+                "render_engine": render_engine,
+                "render_engine_info": render_engine_info_text,
+            }
             if marked_takes:
                 group_id = "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), uuid.uuid4().hex[:8])
                 job_ids = []
@@ -1598,20 +1764,15 @@ class DreamRenderDialog(gui.GeDialog):
                             "%s - %s" % (name, label),
                             chunk_size,
                             notes,
-                            {
+                            dict(common_metadata, **{
                                 "group_id": group_id,
                                 "group_name": name,
                                 "group_index": index,
                                 "group_size": len(marked_takes),
                                 "take_name": label,
                                 "take_render_setting": take_render_setting,
-                                "project_folder": project,
-                                "document_name": get_document_name(self.doc),
-                                "output_source": output_source,
                                 "frame_source": take_frame_source,
-                                "render_engine": render_engine,
-                                "render_engine_info": render_engine_info_text,
-                            },
+                            }),
                         )
                     )
             else:
@@ -1624,14 +1785,7 @@ class DreamRenderDialog(gui.GeDialog):
                         name,
                         chunk_size,
                         notes,
-                        {
-                            "project_folder": project,
-                            "document_name": get_document_name(self.doc),
-                            "output_source": output_source,
-                            "frame_source": frame_source,
-                            "render_engine": render_engine,
-                            "render_engine_info": render_engine_info_text,
-                        },
+                        common_metadata,
                     )
                 ]
         except Exception as exc:
@@ -1646,6 +1800,21 @@ class DreamRenderDialog(gui.GeDialog):
                 "marked_takes": submit_marked_takes,
                 "ignore_warnings": ignore_warnings,
             }
+        )
+        append_submit_history(
+            self.doc,
+            {
+                "submitted_at": utc_now(),
+                "source_scene": source_scene,
+                "source_scene_mtime": source_scene_mtime,
+                "job_scene": scene_path,
+                "job_ids": job_ids,
+                "name": name,
+                "output": output,
+                "frames": "%d-%d" % (start, end),
+                "render_engine": render_engine,
+                "preflight_summary": preflight_summary,
+            },
         )
         if marked_takes:
             gui.MessageDialog("Submitted %d marked takes to DreamRender:\n%s\n\nScene copy:\n%s" % (len(job_ids), "\n".join(job_ids), scene_path))

@@ -13,6 +13,7 @@ from .queue import (
     Share,
     find_frame_preview,
     get_job_detail,
+    mark_failed_done,
     queue_snapshot,
     read_frame_log,
     repair_queue,
@@ -350,7 +351,8 @@ HTML = r"""<!doctype html>
         <button onclick="detailAction('resume', this)">Resume</button>
         <button onclick="detailAction('drain', this)">Stop After Batch</button>
         <button onclick="detailAction('cancel', this)">Cancel</button>
-        <button onclick="detailAction('requeue', this)">Requeue Failed</button>
+        <button onclick="detailAction('requeue', this)">Retry Failed</button>
+        <button onclick="detailAction('mark_failed_done', this)">Mark Failed Done</button>
         <button onclick="requeueSelectedFrame(this)">Requeue Selected</button>
         <button class="danger" onclick="detailAction('archive', this)">Delete</button>
       </div>
@@ -600,7 +602,8 @@ HTML = r"""<!doctype html>
       else if (!isDone && job.status !== "cancelled") actions.push(`<button onclick="action('pause','${job.id}', this)">Pause</button>`);
       if (hasRendering) actions.push(`<button title="Stops assigning new frames; currently rendering frames finish." onclick="action('drain','${job.id}', this)">Stop After Batch</button>`);
       actions.push(`<button onclick="repairQueue('${job.id}', this)">Repair</button>`);
-      if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}', this)">Requeue Failed</button>`);
+      if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button onclick="action('requeue','${job.id}', this)">Retry Failed</button>`);
+      if ((counts.failed || 0) > 0) actions.push(`<button onclick="action('mark_failed_done','${job.id}', this)">Mark Failed Done</button>`);
       if (canCancel) actions.push(`<button onclick="action('cancel','${job.id}', this)">Cancel</button>`);
       if (job.status !== "archived") actions.push(`<button class="danger" onclick="action('archive','${job.id}', this)">Delete</button>`);
       return actions.join("");
@@ -930,6 +933,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             set_job_status(self.share, job_id, "archived")
         elif action == "requeue":
             requeue_failed(self.share, job_id)
+        elif action == "mark_failed_done":
+            mark_failed_done(self.share, job_id)
         elif action == "requeue_frames":
             frames = [int(value) for value in values.get("frames", [])]
             requeue_frames(self.share, job_id, frames)

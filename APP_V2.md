@@ -11,6 +11,8 @@ The renderfarm engine stays Python:
 - dashboard server
 - repair tools
 - GPU status
+- worker confidence and failure recovery
+- submit history metadata
 
 The UI is a modern local web app served by `dreamrender app-v2` and displayed
 inside the Tauri desktop shell.
@@ -61,3 +63,7 @@ to install Python manually.
 
 Until that packaging step is done, users still need regular Python 3.10+ on each
 machine.
+
+The artist-facing install path is still intentionally simple: download
+DreamRender, install regular Python, double-click `START_DREAMRENDER.vbs`, then
+use the app to install the Cinema 4D plugin.

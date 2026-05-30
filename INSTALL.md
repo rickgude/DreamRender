@@ -124,6 +124,8 @@ In Cinema 4D:
 
 DreamRender saves the current scene first, then creates a separate job copy in a
 `DreamRenderJobs` folder near the project. Workers render that job copy.
+DreamRender also stores a small submit history in that folder, so the dashboard
+can show which source scene, renderer, preflight result, and timestamp were used.
 
 ## 7. Render Marked Takes
 
@@ -181,6 +183,14 @@ Open the DreamRender app on that machine and click `Start DreamRender`.
 
 If the machine is still rendering but the dashboard says offline, stop and start
 DreamRender from the app so the worker heartbeat is refreshed.
+
+### A job has failed frames
+
+Open the job in the Dashboard and read the failure summary. Fix the cause first,
+then click `Retry Failed`.
+
+Use `Mark Failed Done` only if you have opened the render folder and verified
+that the output frames are actually there and usable.
 
 ### Output goes to the wrong place
 

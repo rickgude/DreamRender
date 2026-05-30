@@ -198,9 +198,14 @@ function workerLabel(worker) {
   const active = worker.active || null;
   if (active) {
     const frameText = active.start_frame != null && active.end_frame != null ? `frames ${active.start_frame}-${active.end_frame}` : `frame ${active.frame}`;
-    return `job ${active.job_id}, ${frameText}`;
+    const phase = active.phase || "rendering";
+    const job = active.job_name || active.job_id;
+    return `${phase}: ${job}, ${frameText}`;
   }
+  if (worker.stop_now_requested) return "stop requested";
+  if (worker.stop_after_batch) return "will stop after current batch";
   if (worker.restart_requested) return "restart pending";
+  if (worker.code_current === false) return "restart needed";
   if (worker.state === "online") return "idle";
   if (worker.state === "heartbeat_lost") return "heartbeat lost";
   return worker.last_seen_seconds == null ? "offline" : `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
@@ -227,7 +232,7 @@ function renderDashboard(queue, appData) {
     : "Start DreamRender to view live workers and jobs.";
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
-    const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : "";
+    const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
     const stopAfterBatch = Boolean(worker.stop_after_batch);
     return `<article class="dashboard-worker ${stateClass}" style="--worker-color:${color}">
       <span class="dashboard-worker-dot"></span>
@@ -274,7 +279,10 @@ function renderDashboardJob(job) {
   if (job.status === "paused") actions.push(`<button data-dashboard-action="resume" data-job="${esc(job.id)}">Resume</button>`);
   else if (!isDone && job.status !== "cancelled") actions.push(`<button data-dashboard-action="pause" data-job="${esc(job.id)}">Pause</button>`);
   if (hasRendering) actions.push(`<button data-dashboard-action="drain" data-job="${esc(job.id)}">Stop After Batch</button>`);
-  if ((counts.failed || 0) > 0 || job.status === "cancelled") actions.push(`<button data-dashboard-action="requeue" data-job="${esc(job.id)}">Requeue Failed</button>`);
+  if ((counts.failed || 0) > 0 || job.status === "cancelled") {
+    actions.push(`<button data-dashboard-action="requeue" data-job="${esc(job.id)}">Retry Failed</button>`);
+    if ((counts.failed || 0) > 0) actions.push(`<button data-dashboard-action="mark_failed_done" data-job="${esc(job.id)}">Mark Failed Done</button>`);
+  }
   if (canCancel) actions.push(`<button data-dashboard-action="cancel" data-job="${esc(job.id)}">Cancel</button>`);
   if (job.status !== "archived") actions.push(`<button data-dashboard-action="delete" data-job="${esc(job.id)}">Delete</button>`);
   return `<article class="dashboard-job ${collapsed ? "collapsed" : ""}" style="--status-color:${color}" data-job-id="${esc(job.id)}">
@@ -296,9 +304,37 @@ function renderDashboardJob(job) {
         <div>${esc(job.scene || "")}</div>
         <div>${esc(job.display_output || job.output || "")}</div>
       </div>
+      ${renderDashboardJobInfo(job)}
+      ${renderFailureSummary(job)}
       ${renderDashboardFrames(job)}
     </div>
   </article>`;
+}
+
+function renderDashboardJobInfo(job) {
+  const metadata = job.metadata || {};
+  const items = [
+    ["Submitted", metadata.source_scene_saved_at || job.created_at || "--"],
+    ["Source scene", metadata.source_scene || job.source_scene || "--"],
+    ["Renderer", metadata.render_engine || "--"],
+    ["Preflight", metadata.preflight_summary || "--"],
+  ];
+  if (metadata.take_name) items.push(["Take", metadata.take_name]);
+  return `<div class="dashboard-job-info">${items.map(([label, value]) => `
+    <div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>
+  `).join("")}</div>`;
+}
+
+function renderFailureSummary(job) {
+  const summary = job.failure_summary || {};
+  if (!summary.failed) return "";
+  const reasons = summary.reasons || [];
+  return `<div class="dashboard-failure">
+    <strong>${esc(summary.failed)} failed frame(s)</strong>
+    ${reasons.map(item => `<span>${esc(item.count)}x ${esc(item.reason)}</span>`).join("")}
+    ${summary.first_frame ? `<span>First failed frame: ${esc(summary.first_frame)}</span>` : ""}
+    ${summary.first_log ? `<span>Log: ${esc(summary.first_log)}</span>` : ""}
+  </div>`;
 }
 
 function renderDashboardMetrics(job) {

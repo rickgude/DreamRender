@@ -23,6 +23,7 @@ from .queue import (
     clear_worker_stop_request,
     get_job_detail,
     list_visible_jobs,
+    mark_failed_done,
     queue_snapshot,
     repair_queue,
     request_worker_restart,
@@ -473,7 +474,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 else:
                     request_worker_stop_after_batch(self.state.share(), worker_id)
             response_json(self, {"ok": True})
-        elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "open_output"}:
+        elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "mark_failed_done", "open_output"}:
             job_id = str(payload.get("job_id", ""))
             if not job_id:
                 response_json(self, {"ok": False, "message": "Missing job id."}, HTTPStatus.BAD_REQUEST)
@@ -490,6 +491,8 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 set_job_status(self.state.share(), job_id, "archived")
             elif action == "requeue":
                 requeue_failed(self.state.share(), job_id)
+            elif action == "mark_failed_done":
+                mark_failed_done(self.state.share(), job_id)
             elif action == "open_output":
                 self.state.open_output_folder(job_id)
             response_json(self, {"ok": True})

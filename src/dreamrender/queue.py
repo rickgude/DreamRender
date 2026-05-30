@@ -651,7 +651,13 @@ def render_frames(
                 break
             now = time.time()
             if now - last_heartbeat >= heartbeat_interval:
-                active = {"job_id": job["id"], "start_frame": start_frame, "end_frame": end_frame}
+                active = {
+                    "phase": "rendering",
+                    "job_id": job["id"],
+                    "job_name": job.get("name"),
+                    "start_frame": start_frame,
+                    "end_frame": end_frame,
+                }
                 try:
                     heartbeat_worker(share, worker_id, active)
                 except ShareAccessError as exc:
@@ -719,6 +725,7 @@ def complete_one_frame(frame_path: Path, worker_id: str, return_code: int, log_p
                 frame["completion_note"] = "Output image found after Cinema 4D returned a non-zero exit code."
             else:
                 frame["status"] = "failed"
+                frame["completion_note"] = f"Cinema 4D exited with code {return_code} and no current output image was found."
         if frame.get("status") == "done" and job:
             output = find_rendered_frame_output(job, int(frame["frame"]), parse_utc(str(job.get("created_at", ""))) or 0.0, 0)
             if output:
@@ -786,6 +793,38 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
         "counts": counts,
         "progress": (done / total * 100.0) if total else 0.0,
         "stats": stats,
+        "failure_summary": failure_summary(frames),
+    }
+
+
+def frame_failure_reason(frame: dict[str, Any]) -> str:
+    if frame.get("completion_note"):
+        return str(frame["completion_note"])
+    return_code = frame.get("return_code")
+    if return_code not in (None, "", 0):
+        return f"Cinema 4D exited with code {return_code}."
+    if frame.get("status") == "failed":
+        return "Frame failed without a specific reason. Open the frame log for details."
+    return ""
+
+
+def failure_summary(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    failed = [frame for frame in frames if frame.get("status") == "failed"]
+    reasons: dict[str, int] = {}
+    first_frame: dict[str, Any] | None = None
+    for frame in failed:
+        reason = frame_failure_reason(frame)
+        reasons[reason] = reasons.get(reason, 0) + 1
+        if first_frame is None:
+            first_frame = frame
+    return {
+        "failed": len(failed),
+        "reasons": [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(reasons.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "first_frame": first_frame.get("frame") if first_frame else None,
+        "first_log": first_frame.get("log") if first_frame else None,
     }
 
 
@@ -1180,6 +1219,7 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
     if not share.workers_dir.exists():
         return workers
     job_statuses = {}
+    job_names = {}
     active_rendering_ranges: dict[tuple[str, str], dict[str, Any]] = {}
     for job_dir in list_jobs(share):
         try:
@@ -1190,6 +1230,7 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
             continue
         job_id = str(job.get("id") or job_dir.name)
         job_statuses[job_id] = job.get("status", "unknown")
+        job_names[job_id] = job.get("name", job_id)
         for frame_path in (job_dir / "frames").glob("*.json"):
             try:
                 frame = read_json(frame_path)
@@ -1238,7 +1279,9 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
         if worker["state"] != "online" and rendering_active:
             worker["state"] = "heartbeat_lost"
             worker["active"] = {
+                "phase": "heartbeat_lost",
                 "job_id": rendering_active["job_id"],
+                "job_name": job_names.get(rendering_active["job_id"]),
                 "start_frame": rendering_active["start_frame"],
                 "end_frame": rendering_active["end_frame"],
             }
@@ -1266,7 +1309,9 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
                 "state": "heartbeat_lost",
                 "last_seen_seconds": None,
                 "active": {
+                    "phase": "heartbeat_lost",
                     "job_id": rendering_active["job_id"],
+                    "job_name": job_names.get(rendering_active["job_id"]),
                     "start_frame": rendering_active["start_frame"],
                     "end_frame": rendering_active["end_frame"],
                 },
@@ -1383,6 +1428,8 @@ def requeue_frames(share: Share, job_id: str, frames: list[int]) -> int:
             frame["chunk_start"] = None
             frame["chunk_end"] = None
             frame["return_code"] = None
+            frame.pop("completion_note", None)
+            frame.pop("finished_at", None)
             frame["updated_at"] = utc_now()
             write_json_atomic(frame_path, frame)
             changed += 1
@@ -1410,6 +1457,12 @@ def requeue_failed(share: Share, job_id: str | None = None) -> int:
                 if frame.get("status") == "failed":
                     frame["status"] = "queued"
                     frame["worker_id"] = None
+                    frame["chunk_id"] = None
+                    frame["chunk_start"] = None
+                    frame["chunk_end"] = None
+                    frame["return_code"] = None
+                    frame.pop("completion_note", None)
+                    frame.pop("finished_at", None)
                     frame["updated_at"] = utc_now()
                     write_json_atomic(frame_path, frame)
                     changed += 1
@@ -1417,8 +1470,29 @@ def requeue_failed(share: Share, job_id: str | None = None) -> int:
         if job_changed:
             job_path = job_dir / "job.json"
             job = read_json(job_path)
-            if job.get("status") == "done":
+            if job.get("status") in {"done", "cancelled", "archived"}:
                 job["status"] = "queued"
                 job["updated_at"] = utc_now()
                 write_json_atomic(job_path, job)
+    return changed
+
+
+def mark_failed_done(share: Share, job_id: str) -> int:
+    changed = 0
+    job_dir = share.jobs_dir / job_id
+    for frame_path in (job_dir / "frames").glob("*.json"):
+        with FileLock(frame_path.with_suffix(".lock")) as locked:
+            if not locked:
+                continue
+            frame = read_json(frame_path)
+            if frame.get("status") != "failed":
+                continue
+            frame["status"] = "done"
+            frame["completion_note"] = "Marked done manually from DreamRender dashboard."
+            frame["finished_at"] = frame.get("finished_at") or utc_now()
+            frame["updated_at"] = utc_now()
+            write_json_atomic(frame_path, frame)
+            changed += 1
+    if changed:
+        update_job_status_from_frames(job_dir)
     return changed
