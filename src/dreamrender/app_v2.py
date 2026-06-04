@@ -45,7 +45,7 @@ C4D_VERSION = "2026"
 
 def load_config() -> dict[str, object]:
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 
@@ -54,12 +54,17 @@ def save_config(config: dict[str, object]) -> None:
     CONFIG_PATH.write_text(json.dumps(config, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def config_text(config: dict[str, object], key: str, fallback: object) -> str:
+    value = str(config.get(key, "")).strip()
+    return value or str(fallback)
+
+
 def default_config() -> dict[str, object]:
     config = load_config()
     return {
-        "share": str(config.get("share", DEFAULT_SHARE)),
-        "c4d": str(config.get("c4d", DEFAULT_C4D)),
-        "worker_id": str(config.get("worker_id", socket.gethostname())),
+        "share": config_text(config, "share", DEFAULT_SHARE),
+        "c4d": config_text(config, "c4d", DEFAULT_C4D),
+        "worker_id": config_text(config, "worker_id", socket.gethostname()),
         "chunk_size": int(config.get("chunk_size", 5) or 5),
         "monitor_port": int(config.get("monitor_port", 8766) or 8766),
         "keep_worker_running": bool(config.get("keep_worker_running", True)),
@@ -244,7 +249,7 @@ class AppV2State:
     def update_config(self, payload: dict[str, object]) -> None:
         for key in ("share", "c4d", "worker_id"):
             if key in payload:
-                self.config[key] = str(payload[key])
+                self.config[key] = config_text(payload, key, self.config[key])
         for key in ("chunk_size", "monitor_port"):
             if key in payload:
                 self.config[key] = max(1, int(payload[key] or 1))
