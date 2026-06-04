@@ -144,7 +144,7 @@
         <section class="card stack help-card">
           <h2>Instructions</h2>
           <ol class="help-steps">
-            <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the Cinema 4D Commandline path, and install the Cinema 4D plugin.</span></li>
+            <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the detected Cinema 4D Commandline path, and install the Cinema 4D plugin.</span></li>
             <li><strong>Start DreamRender.</strong><span>Use the main toggle at the top. When it is green, this machine can render and monitor jobs.</span></li>
             <li><strong>Submit from Cinema 4D.</strong><span>Open the DreamRender submitter, run Check Scene, review warnings, then submit. DreamRender stores submit history with the job.</span></li>
             <li><strong>Watch the Dashboard.</strong><span>Rendering jobs, worker confidence, frame ownership, progress, failures, and repair actions live in the Dashboard tab.</span></li>
@@ -161,6 +161,7 @@
             <div><strong>EXR preview missing</strong><span>EXR files render fine, but previews need ImageMagick, OpenImageIO, or ffmpeg on the monitor machine.</span></div>
             <div><strong>Failed frames</strong><span>Read the failure summary, fix the cause, then use Retry Failed. Use Mark Failed Done only when outputs are verified.</span></div>
             <div><strong>Old scene rendered</strong><span>The submitter saves first and records source-scene time. Check the job metadata if you suspect an old scene copy.</span></div>
+            <div><strong>Different machine paths</strong><span>DreamRender can be installed anywhere, but every worker must use the same queue path and must be able to read the same project/output paths.</span></div>
           </div>
         </section>
 
@@ -173,7 +174,7 @@
             <span>License: MIT</span>
             <span>App: local desktop control surface</span>
             <span>Submitter: Cinema 4D plugin</span>
-            <span>Installer path: app launcher, plugin installer, no console workflow</span>
+            <span>Config: per-user settings, no hardcoded studio paths</span>
           </div>
         </section>
       </div>

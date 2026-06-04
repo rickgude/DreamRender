@@ -12,8 +12,8 @@ If fso.FileExists(nativeExe) Then
   shell.Run Quote(nativeExe), 1, False
 Else
   shell.CurrentDirectory = rootDir
-  shell.Environment("PROCESS")("PATH") = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\.cargo\bin;" & shell.Environment("PROCESS")("PATH")
-  command = shell.ExpandEnvironmentStrings("%COMSPEC%") & " /d /c npm run tauri:dev"
+  shell.Environment("PROCESS")("PYTHONPATH") = fso.BuildPath(rootDir, "src")
+  command = shell.ExpandEnvironmentStrings("%COMSPEC%") & " /d /c pythonw.exe -m dreamrender app-v2"
   shell.Run command, 0, False
 End If
 

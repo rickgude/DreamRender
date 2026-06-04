@@ -64,6 +64,17 @@ to install Python manually.
 Until that packaging step is done, users still need regular Python 3.10+ on each
 machine.
 
-The artist-facing install path is still intentionally simple: download
-DreamRender, install regular Python, double-click `START_DREAMRENDER.vbs`, then
-use the app to install the Cinema 4D plugin.
+The artist-facing install path is intentionally simple: download a packaged
+DreamRender release, install regular Python if the package does not bundle it,
+double-click `START_DREAMRENDER.vbs`, then use the app to install the Cinema 4D
+plugin.
+
+User-specific app settings are stored outside the source tree:
+
+```text
+%APPDATA%\DreamRender\DreamRenderApp.json
+```
+
+Older installs that used `%USERPROFILE%\DreamRenderApp.json` are still read as a
+fallback. Fresh installs default to `Documents\DreamRenderShare` for local
+testing and should be changed to a shared/NAS folder for multiple machines.

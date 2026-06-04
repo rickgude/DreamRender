@@ -63,7 +63,7 @@ Use only for manual commands and troubleshooting.
 Example:
 
 ```bat
-advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+advanced\ADVANCED_Command_Line.bat status --share "\\YOUR-SERVER\DreamRenderShare"
 ```
 
 ### `_INTERNAL_find_python.bat`

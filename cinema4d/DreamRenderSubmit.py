@@ -17,7 +17,6 @@ import c4d
 from c4d import gui
 
 
-DEFAULT_SHARE = r"\\RenderServer\DreamRender"
 DEFAULT_JOB_FOLDER = "DreamRenderJobs"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), "DreamRenderSubmit.json")
 SUBMIT_HISTORY_FILENAME = "submit_history.json"
@@ -47,6 +46,17 @@ CHECK_WARNING = "WARNING"
 CHECK_OK = "OK"
 
 
+def default_share_path():
+    home = os.path.expanduser("~")
+    documents = os.path.join(home, "Documents")
+    if os.path.isdir(documents):
+        return os.path.join(documents, "DreamRenderShare")
+    return os.path.join(home, "DreamRenderShare")
+
+
+DEFAULT_SHARE = default_share_path()
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -64,7 +74,7 @@ def write_json_atomic(path, payload):
 
 def read_config():
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as handle:
             return json.load(handle)
     except Exception:
         return {}

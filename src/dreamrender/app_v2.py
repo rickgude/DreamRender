@@ -36,21 +36,50 @@ from .queue import (
 )
 
 
-CONFIG_PATH = Path.home() / "DreamRenderApp.json"
-DEFAULT_SHARE = Path(__file__).resolve().parents[2] / "DreamRenderShare"
+LEGACY_CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
 STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
 
 
-def load_config() -> dict[str, object]:
+def user_config_dir() -> Path:
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "DreamRender"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "dreamrender"
+
+
+def user_documents_dir() -> Path:
+    if os.name == "nt":
+        return Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+    return Path.home() / "Documents"
+
+
+CONFIG_DIR = user_config_dir()
+CONFIG_PATH = CONFIG_DIR / "DreamRenderApp.json"
+DEFAULT_SHARE = user_documents_dir() / "DreamRenderShare"
+
+
+def read_config_file(path: Path) -> dict[str, object]:
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
+def load_config() -> dict[str, object]:
+    legacy = read_config_file(LEGACY_CONFIG_PATH)
+    current = read_config_file(CONFIG_PATH)
+    merged = dict(legacy)
+    for key, value in current.items():
+        if isinstance(value, str) and not value.strip():
+            continue
+        merged[key] = value
+    return merged
+
+
 def save_config(config: dict[str, object]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(config, indent=2, sort_keys=True), encoding="utf-8")
 
 
@@ -59,11 +88,48 @@ def config_text(config: dict[str, object], key: str, fallback: object) -> str:
     return value or str(fallback)
 
 
+def c4d_commandline_candidates() -> list[Path]:
+    candidates = [DEFAULT_C4D]
+    if os.name == "nt":
+        for env_name in ("ProgramFiles", "ProgramFiles(x86)"):
+            base = os.environ.get(env_name)
+            if not base:
+                continue
+            maxon = Path(base) / "Maxon"
+            candidates.extend(sorted(maxon.glob(f"Cinema 4D {C4D_VERSION}*/Commandline.exe"), reverse=True))
+            candidates.extend(sorted(maxon.glob("Cinema 4D */Commandline.exe"), reverse=True))
+    else:
+        candidates.extend(
+            [
+                Path(f"/Applications/Maxon Cinema 4D {C4D_VERSION}/Commandline.app/Contents/MacOS/Commandline"),
+                Path(f"/Applications/Maxon Cinema 4D {C4D_VERSION}/Commandline"),
+            ]
+        )
+    unique = []
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def detect_c4d_commandline(config: dict[str, object]) -> str:
+    configured = config_text(config, "c4d", "")
+    if configured and Path(configured).exists():
+        return configured
+    for candidate in c4d_commandline_candidates():
+        if candidate.exists():
+            return str(candidate)
+    return configured or str(DEFAULT_C4D)
+
+
 def default_config() -> dict[str, object]:
     config = load_config()
     return {
         "share": config_text(config, "share", DEFAULT_SHARE),
-        "c4d": config_text(config, "c4d", DEFAULT_C4D),
+        "c4d": detect_c4d_commandline(config),
         "worker_id": config_text(config, "worker_id", socket.gethostname()),
         "chunk_size": int(config.get("chunk_size", 5) or 5),
         "monitor_port": int(config.get("monitor_port", 8766) or 8766),
@@ -271,6 +337,14 @@ class AppV2State:
             shutil.copy2(source_script, target / "DreamRenderSubmit.py")
             shutil.copy2(source_plugin, target / "DreamRender.pyp")
             installed.append(str(target))
+        submit_config = {
+            "share": str(self.config["share"]),
+            "chunk_size": int(self.config["chunk_size"]),
+            "marked_takes": False,
+            "ignore_warnings": False,
+            "notes": "",
+        }
+        (Path.home() / "DreamRenderSubmit.json").write_text(json.dumps(submit_config, indent=2, sort_keys=True), encoding="utf-8")
         return True, "Installed plugin to:\n" + "\n".join(installed)
 
     def c4d_plugin_targets(self) -> list[Path]:

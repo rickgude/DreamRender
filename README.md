@@ -18,6 +18,9 @@ New install? Follow the artist-friendly guide:
 DreamRender uses a clean desktop app shell. See **[DreamRender App](APP_V2.md)**
 for architecture and development notes.
 
+For normal use, download a packaged DreamRender release. Cloning the GitHub
+source is meant for developers and people who want to build the app themselves.
+
 That guide covers:
 
 - installing regular Python
@@ -51,6 +54,9 @@ That guide covers:
 
 ## Recommended Setup
 
+DreamRender itself can live anywhere on each machine. The important part is the
+shared queue folder and your Cinema 4D project/output paths.
+
 Use the same project path on every machine. For example, if the project is on
 drive `P:\` on the workstation, map it as `P:\` on the render node too.
 
@@ -62,12 +68,15 @@ DreamRenderShare/
   workers/
 ```
 
-The queue folder can live on a NAS, a shared drive, or one of the machines.
+The queue folder can live on a NAS, a shared drive, or one of the machines. On a
+fresh install, DreamRender suggests a local `Documents\DreamRenderShare` folder
+so the app can start cleanly. For multiple machines, change that to the same
+network/shared folder on every machine.
 
 ## Day-To-Day Workflow
 
 1. Start `START_DREAMRENDER.vbs`.
-2. Set the shared queue folder and Cinema 4D Commandline path.
+2. Set the shared queue folder and confirm the detected Cinema 4D Commandline path.
 3. Click `Install C4D Plugin` once per workstation.
 4. Make sure the `Health` panel is OK.
 5. Click `Start DreamRender` on every machine that should render.
@@ -83,6 +92,10 @@ Use `START_DREAMRENDER.vbs` for normal work. It opens the native DreamRender app
 without showing a console window. The app keeps the proven Python renderfarm
 engine underneath, but gives artists one clean control surface.
 
+If the packaged native app executable is not present, the launcher falls back to
+the local Python app UI without requiring Node.js or Rust. Developers can still
+use the Tauri commands in `APP_V2.md` when they want to build the native shell.
+
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you deliberately want a visible
 troubleshooting console.
@@ -90,6 +103,9 @@ troubleshooting console.
 ## Cinema 4D Plugin
 
 Install the plugin from the DreamRender App with `Install C4D Plugin`.
+
+The app writes the current DreamRender share into the Cinema 4D submitter config
+when it installs the plugin, so the submitter opens with the same queue path.
 
 Restart Cinema 4D 2026 after installing. The command appears as:
 
@@ -160,19 +176,19 @@ console.
 Run a worker:
 
 ```bat
-scripts\advanced\ADVANCED_Worker_Only_C4D2026.bat "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Worker_Only_C4D2026.bat "\\YOUR-SERVER\DreamRenderShare"
 ```
 
 Run the monitor:
 
 ```bat
-scripts\advanced\ADVANCED_Monitor_Only.bat "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Monitor_Only.bat "\\YOUR-SERVER\DreamRenderShare"
 ```
 
 Check queue status:
 
 ```bat
-scripts\advanced\ADVANCED_Command_Line.bat status --share "\\RenderServer\DreamRender"
+scripts\advanced\ADVANCED_Command_Line.bat status --share "\\YOUR-SERVER\DreamRenderShare"
 ```
 
 ## Development Install

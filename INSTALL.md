@@ -4,13 +4,15 @@ This is the simple setup path for Cinema 4D 2026 with Redshift or Octane.
 
 You only need three things:
 
-1. DreamRender copied to each machine.
+1. DreamRender installed or copied to each machine.
 2. Regular Python 3.10 or newer installed on each machine.
 3. One shared DreamRender queue folder that every machine can read and write.
 
 ## 1. Download DreamRender
 
-Download or clone this repository on each machine.
+For artists, download the packaged DreamRender release from GitHub. Cloning the
+repository is mainly for developers because source checkouts do not include a
+ready-built desktop executable.
 
 Recommended folder:
 
@@ -18,7 +20,9 @@ Recommended folder:
 C:\DreamRender
 ```
 
-Any folder is fine, but keep it simple and avoid moving it after setup.
+Any folder is fine. Every machine can use a different DreamRender install
+folder. The queue folder and Cinema 4D project/output paths are the parts that
+must be shared consistently.
 
 ## 2. Install Python
 
@@ -38,6 +42,9 @@ for the worker.
 Quick check: double-click `START_DREAMRENDER.vbs`. If the
 DreamRender App opens, Python is ready.
 
+Node.js and Rust are only needed if you want to build the native desktop shell
+from source. They are not part of the normal artist setup.
+
 ## 3. Create The DreamRender Share
 
 Create one shared folder that all machines can read and write.
@@ -45,7 +52,7 @@ Create one shared folder that all machines can read and write.
 Examples:
 
 ```text
-\\RenderServer\DreamRender
+\\YOUR-SERVER\DreamRenderShare
 X:\DreamRenderShare
 R:\DreamRenderShare
 ```
@@ -55,6 +62,15 @@ normal project folder.
 
 Important: each render machine also needs access to the project files and output
 folder using the same paths that Cinema 4D uses.
+
+On first launch, DreamRender may suggest a local folder such as:
+
+```text
+C:\Users\<you>\Documents\DreamRenderShare
+```
+
+That is fine for testing on one machine. For a render farm, change it to the
+same NAS/shared folder on every machine.
 
 ## 4. Start The App
 
@@ -67,7 +83,8 @@ START_DREAMRENDER.vbs
 In the app:
 
 1. Choose or create the DreamRender share folder.
-2. Confirm the Cinema 4D Commandline path.
+2. Confirm the Cinema 4D Commandline path. DreamRender tries to detect Cinema 4D
+   automatically, but you can browse to it if your install is custom.
 3. Click `Install C4D Plugin` on the workstation you submit from.
 4. Click `Start DreamRender` on every machine that should render.
 5. Open the `Dashboard` tab when you want to watch the farm.
@@ -79,8 +96,9 @@ When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
 Use the app for normal work. The `.vbs` launcher opens DreamRender without a
-console window. Only use scripts in `scripts\advanced` when you deliberately
-want a visible troubleshooting console.
+console window. If a packaged native executable is not present, it starts the
+Python app UI as a fallback. Only use scripts in `scripts\advanced` when you
+deliberately want a visible troubleshooting console.
 
 ## 5. Install The Cinema 4D Plugin
 
@@ -91,6 +109,10 @@ Install C4D Plugin
 ```
 
 Then restart Cinema 4D 2026.
+
+The installer also writes the selected DreamRender share path into the Cinema 4D
+submitter config. If you change the share later, click `Install C4D Plugin`
+again or set the share manually in the submitter.
 
 Open the submitter from:
 

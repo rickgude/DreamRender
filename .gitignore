@@ -6,6 +6,9 @@ dist/
 build/
 *.egg-info/
 DreamRenderShare/
+dreamrender.json
+jobs/
+workers/
 *.exe
 node_modules/
 src-tauri/target/
