@@ -1712,8 +1712,7 @@ class DreamRenderDialog(gui.GeDialog):
         job_stamp = "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), uuid.uuid4().hex[:8])
         job_scene_dir = os.path.join(jobs_root, job_stamp)
         os.makedirs(job_scene_dir)
-        source_name = os.path.splitext(get_document_name(self.doc))[0]
-        scene_path = os.path.join(job_scene_dir, "%s_%s.c4d" % (source_name, job_stamp))
+        scene_path = os.path.join(job_scene_dir, get_document_name(self.doc))
 
         flags = c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST
         saved = c4d.documents.SaveDocument(self.doc, scene_path, flags, c4d.FORMAT_C4DEXPORT)
