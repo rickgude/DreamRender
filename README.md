@@ -43,6 +43,8 @@ That guide covers:
   controls, and stale-worker recovery.
 - App health diagnostics for missing Cinema 4D paths, plugin install state,
   queue write access, worker heartbeat loss, failed frames, and stale locks.
+- Custom Cinema 4D render commands, including `.bat`/`.cmd` wrappers for
+  renderer-specific environment paths.
 - Failed frames stay failed until you intentionally repair or requeue them, so
   broken frames do not loop forever in the background.
 - Failed jobs show grouped failure reasons, retry controls, and a manual
@@ -128,6 +130,11 @@ whether the source scene changed since its last DreamRender submission.
 DreamRender saves the current scene, then creates a separate job-scene copy in a
 `DreamRenderJobs` folder near the project. Workers render that copy, while output
 still goes to the path set in Cinema 4D Render Settings.
+
+If Redshift, Octane, OCIO, maps, or plugin paths are normally configured by a
+batch file on your machine, set the app's `Cinema 4D Render Command` to that
+wrapper. The wrapper must call Cinema 4D `Commandline.exe` with `%*` so
+DreamRender's render arguments are forwarded.
 
 ## Renderer Support
 

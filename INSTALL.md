@@ -83,8 +83,9 @@ START_DREAMRENDER.vbs
 In the app:
 
 1. Choose or create the DreamRender share folder.
-2. Confirm the Cinema 4D Commandline path. DreamRender tries to detect Cinema 4D
-   automatically, but you can browse to it if your install is custom.
+2. Confirm the Cinema 4D Render Command. DreamRender tries to detect Cinema 4D
+   automatically, but you can also use a custom `.bat` or `.cmd` wrapper if your
+   renderer needs environment variables or custom plugin paths.
 3. Click `Install C4D Plugin` on the workstation you submit from.
 4. Click `Start DreamRender` on every machine that should render.
 5. Open the `Dashboard` tab when you want to watch the farm.
@@ -220,6 +221,29 @@ DreamRender uses the output path from Cinema 4D Render Settings. Make sure every
 machine can access that same path.
 
 For best results, map project folders and output folders identically on every
+machine.
+
+### Redshift or Octane renders black frames
+
+Some renderers need environment variables or plugin paths that you normally set
+from your own startup batch file. If command-line renders need that setup, point
+DreamRender's `Cinema 4D Render Command` field to a wrapper `.bat` or `.cmd`
+instead of directly to `Commandline.exe`.
+
+Example:
+
+```bat
+@echo off
+set "REDSHIFT_COREDATAPATH=C:\ProgramData\Redshift"
+set "PATH=C:\ProgramData\Redshift\bin;%PATH%"
+"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe" %*
+```
+
+The `%*` part is important. It forwards DreamRender's `-render`, `-frame`,
+`-take`, and output arguments to Cinema 4D.
+
+Also make sure texture, cache, OCIO, font, and plugin paths are available on
+every worker. Local asset paths only work if the same path exists on every
 machine.
 
 ### EXR previews do not show in the dashboard

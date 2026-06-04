@@ -600,7 +600,7 @@ def render_frames(
 
     command = build_command(command_template, c4d, job, job_dir, start_frame, end_frame, worker_id)
     log_path = job_dir / "logs" / f"{start_frame:04d}-{end_frame:04d}-{worker_id}.log"
-    print(f"Launching Cinema 4D for job {job['id']} frame(s) {start_frame}-{end_frame}", flush=True)
+    print(f"Launching render command for job {job['id']} frame(s) {start_frame}-{end_frame}", flush=True)
     print(f"Log: {log_path}", flush=True)
 
     process = subprocess.Popen(

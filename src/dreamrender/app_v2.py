@@ -266,7 +266,7 @@ class AppV2State:
             return
         c4d = Path(str(self.config["c4d"]))
         if not c4d.exists():
-            self.status = "Cinema 4D Commandline.exe is missing"
+            self.status = "Cinema 4D render command is missing"
             return
         clear_worker_restart_request(self.share(), str(self.config["worker_id"]))
         clear_worker_stop_request(self.share(), str(self.config["worker_id"]))
@@ -375,7 +375,7 @@ class AppV2State:
         plugin_installed = any((target / "DreamRender.pyp").exists() for target in self.c4d_plugin_targets())
         items = [
             {"label": "Queue", "ok": share.exists(), "tone": "ok" if share.exists() else "error", "detail": str(share)},
-            {"label": "Cinema 4D", "ok": c4d.exists(), "tone": "ok" if c4d.exists() else "error", "detail": str(c4d)},
+            {"label": "Render Command", "ok": c4d.exists(), "tone": "ok" if c4d.exists() else "error", "detail": str(c4d)},
             {
                 "label": "Plugin",
                 "ok": plugin_installed,

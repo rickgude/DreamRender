@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DreamRender App</title>
-  <link rel="stylesheet" href="/styles.css?v=16">
+  <link rel="stylesheet" href="/styles.css?v=17">
 </head>
 <body>
   <main class="shell">
@@ -63,7 +63,8 @@
             </div>
           </div>
           <label>Queue <input id="share"></label>
-          <label>Cinema 4D Commandline <input id="c4d"></label>
+          <label>Cinema 4D Render Command <input id="c4d"></label>
+          <p class="field-note">Use Commandline.exe, or a .bat/.cmd wrapper that sets renderer paths and forwards all arguments.</p>
           <label>Worker <input id="worker-id"></label>
           <div class="two-col">
             <label>Chunk Size <input id="chunk-size" type="number" min="1"></label>
@@ -144,7 +145,7 @@
         <section class="card stack help-card">
           <h2>Instructions</h2>
           <ol class="help-steps">
-            <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the detected Cinema 4D Commandline path, and install the Cinema 4D plugin.</span></li>
+            <li><strong>Setup this machine.</strong><span>Choose the shared queue folder, confirm the render command, and install the Cinema 4D plugin. Custom Redshift/Octane setups can use a .bat/.cmd wrapper.</span></li>
             <li><strong>Start DreamRender.</strong><span>Use the main toggle at the top. When it is green, this machine can render and monitor jobs.</span></li>
             <li><strong>Submit from Cinema 4D.</strong><span>Open the DreamRender submitter, run Check Scene, review warnings, then submit. DreamRender stores submit history with the job.</span></li>
             <li><strong>Watch the Dashboard.</strong><span>Rendering jobs, worker confidence, frame ownership, progress, failures, and repair actions live in the Dashboard tab.</span></li>
@@ -157,6 +158,7 @@
             <div><strong>Plugin missing</strong><span>Close Cinema 4D, click Install C4D Plugin, then start Cinema 4D again.</span></div>
             <div><strong>Worker offline</strong><span>Open DreamRender on that machine and start it again. If needed, use Restart in the Dashboard.</span></div>
             <div><strong>Nothing renders</strong><span>Check Health, queue permissions, renderer licenses, and that every worker can access the same project paths.</span></div>
+            <div><strong>Black frames</strong><span>If your renderer needs custom environment paths, set Cinema 4D Render Command to a .bat/.cmd wrapper that calls Commandline.exe with %*.</span></div>
             <div><strong>Wrong output path</strong><span>DreamRender uses Cinema 4D Render Settings. Make sure all machines map projects and output folders identically.</span></div>
             <div><strong>EXR preview missing</strong><span>EXR files render fine, but previews need ImageMagick, OpenImageIO, or ffmpeg on the monitor machine.</span></div>
             <div><strong>Failed frames</strong><span>Read the failure summary, fix the cause, then use Retry Failed. Use Mark Failed Done only when outputs are verified.</span></div>
@@ -180,6 +182,6 @@
       </div>
     </section>
   </main>
-  <script src="/app.js?v=16"></script>
+  <script src="/app.js?v=17"></script>
 </body>
 </html>

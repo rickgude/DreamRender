@@ -1069,7 +1069,7 @@ def cache_asset_summary(doc):
         if is_local_asset_path(normalized) and document_folder and not same_or_child(normalized, project):
             external_cache_paths.append(normalized)
     if external_cache_paths:
-        return CHECK_WARNING, "cache/proxy paths outside project", "Workers need identical mappings:\n%s" % "\n".join(external_cache_paths[:8])
+        return CHECK_WARNING, "cache/proxy paths outside project", "Local/global paths must exist identically on every worker:\n%s" % "\n".join(external_cache_paths[:8])
     if cache_paths:
         return CHECK_OK, "cache/proxy assets found", "%d cache/proxy assets checked" % len(cache_paths)
     return CHECK_OK, "no cache/proxy assets reported", ""
@@ -1130,7 +1130,7 @@ def scene_report_step_builders(doc, share, output, start, end, chunk_size, submi
             if missing:
                 level, message, info = CHECK_WARNING, "missing assets found", "%d missing, first: %s" % (len(missing), missing[0])
             elif external:
-                level, message, info = CHECK_WARNING, "external asset paths found", "%d outside project; workers need same mapping" % len(external)
+                level, message, info = CHECK_WARNING, "external asset paths found", "%d outside project; local/global paths must exist identically on every worker" % len(external)
             else:
                 level, message, info = CHECK_OK, "all assets found", "%d assets checked" % len(assets)
         return {"label": "TEXTURES", "level": level, "message": message, "info": info, "text": check_result_text(level, message, info)}
@@ -1464,7 +1464,7 @@ def run_scene_checks(doc, share, output, start, end, chunk_size, submit_marked_t
                 checks,
                 CHECK_WARNING,
                 "Assets outside the project folder",
-                "Workers need the same path mapping for these files:\n%s" % "\n".join(external[:12]),
+                "Local/global paths must exist identically on every worker:\n%s" % "\n".join(external[:12]),
             )
         level, message, detail = cache_asset_summary(doc)
         add_check(checks, level, message, detail)

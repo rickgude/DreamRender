@@ -115,7 +115,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     share = Share(args.share)
     worker_id = args.worker_id
     if not args.c4d.exists():
-        print(f"Cinema 4D commandline executable not found: {args.c4d}", file=sys.stderr, flush=True)
+        print(f"Cinema 4D render command not found: {args.c4d}", file=sys.stderr, flush=True)
         return 2
 
     try:

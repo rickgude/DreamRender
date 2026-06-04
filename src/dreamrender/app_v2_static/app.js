@@ -170,12 +170,25 @@ function render(data) {
     card.classList.toggle("is-working", Boolean(busy));
   });
 
-  $("#share").value = config.share || "";
-  $("#c4d").value = config.c4d || "";
-  $("#worker-id").value = config.worker_id || "";
-  $("#chunk-size").value = config.chunk_size || 5;
-  $("#monitor-port").value = config.monitor_port || 8766;
-  $("#keep-worker").checked = Boolean(config.keep_worker_running);
+  // The app refreshes every few seconds. Do not overwrite Setup fields while
+  // someone is typing a custom render command such as a Redshift wrapper .bat.
+  const editing = document.activeElement;
+  const setupCard = $("#share")?.closest(".bento-card");
+  const isEditingSetup = Boolean(
+    setupCard &&
+    editing &&
+    setupCard.contains(editing) &&
+    ["INPUT", "TEXTAREA", "SELECT"].includes(editing.tagName)
+  );
+
+  if (!isEditingSetup) {
+    $("#share").value = config.share || "";
+    $("#c4d").value = config.c4d || "";
+    $("#worker-id").value = config.worker_id || "";
+    $("#chunk-size").value = config.chunk_size || 5;
+    $("#monitor-port").value = config.monitor_port || 8766;
+    $("#keep-worker").checked = Boolean(config.keep_worker_running);
+  }
 
   renderHealth(data.health || []);
   renderQueue(data.queue || {});
