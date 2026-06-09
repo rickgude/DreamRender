@@ -14,6 +14,12 @@ use tauri::{Manager, Url};
 
 struct BackendProcess(Arc<Mutex<Option<Child>>>);
 
+impl Drop for BackendProcess {
+    fn drop(&mut self) {
+        stop_backend_process(&self.0);
+    }
+}
+
 fn main() {
     let backend = BackendProcess(Arc::new(Mutex::new(None)));
     let backend_for_setup = backend.0.clone();
@@ -40,13 +46,7 @@ fn main() {
         })
         .on_window_event(move |_window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                stop_backend_services();
-                if let Ok(mut guard) = backend_for_exit.lock() {
-                    if let Some(child) = guard.as_mut() {
-                        let _ = child.kill();
-                    }
-                    *guard = None;
-                }
+                stop_backend_process(&backend_for_exit);
             }
         })
         .manage(backend)
@@ -155,4 +155,15 @@ fn stop_backend_services() {
         let _ = stream.write_all(request.as_bytes());
     }
     thread::sleep(Duration::from_millis(250));
+}
+
+fn stop_backend_process(backend: &Arc<Mutex<Option<Child>>>) {
+    stop_backend_services();
+    if let Ok(mut guard) = backend.lock() {
+        if let Some(child) = guard.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        *guard = None;
+    }
 }
