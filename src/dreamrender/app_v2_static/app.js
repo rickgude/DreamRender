@@ -3,6 +3,7 @@ const state = {
   drag: null,
   dashboardDrag: null,
   toggleBusy: null,
+  initialized: false,
 };
 const layoutKey = "dreamrender.app.bentoLayout.v3";
 const expandedJobsKey = "dreamrender.app.expandedJobs.v1";
@@ -42,15 +43,28 @@ function saveExpandedJobs() {
   localStorage.setItem(expandedJobsKey, JSON.stringify([...expandedJobs]));
 }
 
-async function post(path, payload) {
-  const response = await fetch(path, {
+async function fetchJson(path, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, { ...options, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || response.statusText);
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("DreamRender is taking longer than expected. It may still be starting; check Activity for details.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function post(path, payload, timeoutMs = 12000) {
+  return fetchJson(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.message || response.statusText);
-  return data;
+  }, timeoutMs);
 }
 
 function showInlineMessage(selector, tone, title, detail) {
@@ -146,26 +160,36 @@ function selectTab(tabId) {
 }
 
 async function refresh() {
-  const data = await fetch("/api/state").then(response => response.json());
+  const data = await fetchJson("/api/state", {}, 10000);
   state.data = data;
+  state.initialized = true;
   render(data);
+}
+
+async function safeRefresh() {
+  try {
+    await refresh();
+  } catch (error) {
+    showAppFeedback("working", error.message || "DreamRender is still loading.");
+  }
 }
 
 function render(data) {
   const config = data.config || {};
+  const hasConfig = Boolean(data.config);
   const busy = state.toggleBusy;
-  const toggleLabel = busy ? (busy === "start" ? "Starting..." : "Stopping...") : (data.worker_running ? "Stop DreamRender" : "Start DreamRender");
+  const toggleLabel = !hasConfig ? "Loading..." : busy ? (busy === "start" ? "Starting..." : "Stopping...") : (data.worker_running ? "Stop DreamRender" : "Start DreamRender");
   $("#toggle").innerHTML = `<span class="toggle-switch" aria-hidden="true"><span></span></span><span>${esc(toggleLabel)}</span>`;
   $("#toggle").setAttribute("aria-pressed", data.worker_running ? "true" : "false");
   $("#toggle").classList.toggle("stop", Boolean(data.worker_running));
   $("#toggle").classList.toggle("is-loading", Boolean(busy));
-  $("#toggle").disabled = Boolean(busy);
+  $("#toggle").disabled = Boolean(busy) || !hasConfig;
   $("#dashboard-tab").disabled = Boolean(busy) || !data.worker_running;
   $("#dashboard-tab").title = data.worker_running ? "Show the DreamRender dashboard" : "Start DreamRender before opening the dashboard";
   if (!data.worker_running && $("#dashboard-panel").classList.contains("active")) selectTab("setup");
   $("#worker-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.worker_running ? `Running as ${config.worker_id}` : "Stopped";
-  $("#monitor-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.monitor_running ? `Running on port ${config.monitor_port}` : "Stopped";
-  $("#app-status").textContent = busy === "start" ? "Starting worker and monitor" : busy === "stop" ? "Stopping services" : data.status || "Ready";
+  $("#monitor-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.monitor_running ? "Integrated dashboard" : "Ready";
+  $("#app-status").textContent = busy === "start" ? "Starting worker and dashboard" : busy === "stop" ? "Stopping services" : data.status || "Ready";
   document.querySelectorAll('[data-widget="worker"], [data-widget="monitor"], [data-widget="status"]').forEach(card => {
     card.classList.toggle("is-working", Boolean(busy));
   });
@@ -181,7 +205,7 @@ function render(data) {
     ["INPUT", "TEXTAREA", "SELECT"].includes(editing.tagName)
   );
 
-  if (!isEditingSetup) {
+  if (hasConfig && !isEditingSetup) {
     $("#share").value = config.share || "";
     $("#c4d").value = config.c4d || "";
     $("#worker-id").value = config.worker_id || "";
@@ -451,10 +475,15 @@ function renderGpus(gpus, message) {
 }
 
 function readConfigForm() {
+  const existing = state.data?.config || {};
+  const textValue = (selector, key) => {
+    const value = $(selector).value.trim();
+    return value || existing[key] || "";
+  };
   return {
-    share: $("#share").value,
-    c4d: $("#c4d").value,
-    worker_id: $("#worker-id").value,
+    share: textValue("#share", "share"),
+    c4d: textValue("#c4d", "c4d"),
+    worker_id: textValue("#worker-id", "worker_id"),
     chunk_size: Number($("#chunk-size").value || 5),
     monitor_port: Number($("#monitor-port").value || 8766),
     keep_worker_running: $("#keep-worker").checked,
@@ -462,6 +491,10 @@ function readConfigForm() {
 }
 
 async function saveConfig() {
+  if (!state.initialized || !state.data?.config) {
+    showAppFeedback("working", "DreamRender is still loading setup.");
+    return;
+  }
   await post("/api/config", readConfigForm());
   await refresh();
 }
@@ -528,12 +561,20 @@ document.addEventListener("pointercancel", () => {
 });
 
 $("#toggle").addEventListener("click", async () => {
+  if (!state.initialized || !state.data?.config) {
+    showAppFeedback("working", "DreamRender is still loading setup.");
+    return;
+  }
   const action = state.data?.worker_running ? "stop" : "start";
   setToggleBusy(action);
   try {
     await saveConfig();
-    await post("/api/action", { action });
-    await refresh();
+    await post("/api/action", { action }, action === "start" ? 20000 : 12000);
+    try {
+      await refresh();
+    } catch (error) {
+      showAppFeedback("working", error.message);
+    }
     clearToggleBusy(action === "start" ? "DreamRender is running." : "DreamRender stopped.");
   } catch (error) {
     state.toggleBusy = null;
@@ -666,5 +707,5 @@ $("#copy-log").addEventListener("click", async () => {
 });
 
 applySavedLayout();
-refresh();
-setInterval(refresh, 2500);
+safeRefresh();
+setInterval(safeRefresh, 2500);

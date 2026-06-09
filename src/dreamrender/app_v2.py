@@ -249,13 +249,12 @@ class AppV2State:
         return self.worker_process is not None and self.worker_process.poll() is None
 
     def monitor_running(self) -> bool:
-        return self.monitor_process is not None and self.monitor_process.poll() is None
+        return self.worker_should_run or (self.monitor_process is not None and self.monitor_process.poll() is None)
 
     def start(self) -> None:
         with self.lock:
             self.share().init()
             self.worker_should_run = True
-            self.start_monitor()
             self.start_worker()
             self.status = "DreamRender running"
 
