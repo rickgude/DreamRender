@@ -42,6 +42,13 @@ STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
 
 
+def bundled_root() -> Path:
+    pyinstaller_root = getattr(sys, "_MEIPASS", None)
+    if pyinstaller_root:
+        return Path(pyinstaller_root)
+    return Path(__file__).resolve().parents[2]
+
+
 def user_config_dir() -> Path:
     if os.name == "nt":
         return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "DreamRender"
@@ -324,8 +331,8 @@ class AppV2State:
         self.persist()
 
     def install_plugin(self) -> tuple[bool, str]:
-        source_script = Path(__file__).resolve().parents[2] / "cinema4d" / "DreamRenderSubmit.py"
-        source_plugin = Path(__file__).resolve().parents[2] / "cinema4d" / "plugin" / "DreamRender.pyp"
+        source_script = bundled_root() / "cinema4d" / "DreamRenderSubmit.py"
+        source_plugin = bundled_root() / "cinema4d" / "plugin" / "DreamRender.pyp"
         if not source_script.exists() or not source_plugin.exists():
             return False, "Cinema 4D plugin source files are missing."
         targets = self.c4d_plugin_targets()

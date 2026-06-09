@@ -23,7 +23,6 @@ source is meant for developers and people who want to build the app themselves.
 
 That guide covers:
 
-- installing regular Python
 - setting up the DreamRender app
 - choosing the shared queue folder
 - installing the Cinema 4D plugin from the app
@@ -77,26 +76,32 @@ network/shared folder on every machine.
 
 ## Day-To-Day Workflow
 
-1. Start `START_DREAMRENDER.vbs`.
-2. Set the shared queue folder and confirm the detected Cinema 4D Commandline path.
-3. Click `Install C4D Plugin` once per workstation.
-4. Make sure the `Health` panel is OK.
-5. Click `Start DreamRender` on every machine that should render.
-6. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
-7. Click `Check Scene`.
-8. Click `Submit Project`.
-9. Confirm `Save` when DreamRender asks to save the scene.
-10. Watch the integrated dashboard.
+1. Install the latest `DreamRender_..._x64-setup.exe` release.
+2. Start DreamRender from the Start Menu.
+3. Set the shared queue folder and confirm the detected Cinema 4D Render Command.
+4. Click `Install C4D Plugin` once per workstation.
+5. Make sure the `Health` panel is OK.
+6. Click `Start DreamRender` on every machine that should render.
+7. In Cinema 4D, open `Extensions > DreamRender Submit Render`.
+8. Click `Check Scene`.
+9. Click `Submit Project`.
+10. Confirm `Save` when DreamRender asks to save the scene.
+11. Watch the integrated dashboard.
 
-## Which Script Should I Use?
+## Which Launcher Should I Use?
 
-Use `START_DREAMRENDER.vbs` for normal work. It opens the native DreamRender app
-without showing a console window. The app keeps the proven Python renderfarm
-engine underneath, but gives artists one clean control surface.
+For normal work, use the packaged DreamRender app from the Start Menu. The
+Windows setup installer includes DreamRender's local backend, so artists do not
+need to install Python, Node.js, Rust, or clone this repository.
 
-If the packaged native app executable is not present, the launcher falls back to
-the local Python app UI without requiring Node.js or Rust. Developers can still
-use the Tauri commands in `APP_V2.md` when they want to build the native shell.
+If you are running from a source checkout, use:
+
+```text
+START_DREAMRENDER.vbs
+```
+
+The source launcher opens the native app when a built executable is present, or
+falls back to the local Python app UI for development.
 
 Advanced scripts live in `scripts\advanced`. Use
 `ADVANCED_Worker_Only_C4D2026.bat` only when you deliberately want a visible

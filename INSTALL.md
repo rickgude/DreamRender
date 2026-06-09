@@ -5,47 +5,29 @@ This is the simple setup path for Cinema 4D 2026 with Redshift or Octane.
 You only need three things:
 
 1. DreamRender installed or copied to each machine.
-2. Regular Python 3.10 or newer installed on each machine.
-3. One shared DreamRender queue folder that every machine can read and write.
+2. One shared DreamRender queue folder that every machine can read and write.
+3. Cinema 4D 2026 with Redshift or Octane installed and licensed on each render machine.
 
 ## 1. Download DreamRender
 
-For artists, download the packaged DreamRender release from GitHub. Cloning the
-repository is mainly for developers because source checkouts do not include a
-ready-built desktop executable.
-
-Recommended folder:
+For artists, download the latest packaged Windows release from GitHub and run:
 
 ```text
-C:\DreamRender
+DreamRender_..._x64-setup.exe
 ```
 
-Any folder is fine. Every machine can use a different DreamRender install
-folder. The queue folder and Cinema 4D project/output paths are the parts that
-must be shared consistently.
+This is the recommended installer. It installs DreamRender for the current user,
+creates a Start Menu entry, and includes the local DreamRender backend. Artists
+do not need to install Python, Node.js, Rust, or clone this repository.
 
-## 2. Install Python
+Every machine can use a different DreamRender install folder. The queue folder
+and Cinema 4D project/output paths are the parts that must be shared
+consistently.
 
-Install regular Python 3.10 or newer from:
+Node.js, Rust, and Python are only needed if you want to build DreamRender from
+source. They are not part of the normal artist setup.
 
-[https://www.python.org/downloads/windows/](https://www.python.org/downloads/windows/)
-
-During install, enable:
-
-```text
-Add python.exe to PATH
-```
-
-DreamRender workers should use regular Python. Do not use Cinema 4D `c4dpy.exe`
-for the worker.
-
-Quick check: double-click `START_DREAMRENDER.vbs`. If the
-DreamRender App opens, Python is ready.
-
-Node.js and Rust are only needed if you want to build the native desktop shell
-from source. They are not part of the normal artist setup.
-
-## 3. Create The DreamRender Share
+## 2. Create The DreamRender Share
 
 Create one shared folder that all machines can read and write.
 
@@ -72,9 +54,12 @@ C:\Users\<you>\Documents\DreamRenderShare
 That is fine for testing on one machine. For a render farm, change it to the
 same NAS/shared folder on every machine.
 
-## 4. Start The App
+## 3. Start The App
 
-Double-click:
+Start DreamRender from the Windows Start Menu.
+
+If you are running a source checkout instead of the packaged release,
+double-click:
 
 ```text
 START_DREAMRENDER.vbs
@@ -97,11 +82,10 @@ When the app closes, its worker is stopped too. This keeps the render node state
 clear and avoids hidden workers running in the background.
 
 Use the app for normal work. The `.vbs` launcher opens DreamRender without a
-console window. If a packaged native executable is not present, it starts the
-Python app UI as a fallback. Only use scripts in `scripts\advanced` when you
-deliberately want a visible troubleshooting console.
+console window when working from source. Only use scripts in `scripts\advanced`
+when you deliberately want a visible troubleshooting console.
 
-## 5. Install The Cinema 4D Plugin
+## 4. Install The Cinema 4D Plugin
 
 The easiest way is from the DreamRender app:
 
@@ -129,7 +113,7 @@ If you do not see it:
 4. Start Cinema 4D again.
 5. Check the Extensions menu and Command Manager.
 
-## 6. Submit A Render
+## 5. Submit A Render
 
 In Cinema 4D:
 
@@ -150,7 +134,7 @@ DreamRender saves the current scene first, then creates a separate job copy in a
 DreamRender also stores a small submit history in that folder, so the dashboard
 can show which source scene, renderer, preflight result, and timestamp were used.
 
-## 7. Render Marked Takes
+## 6. Render Marked Takes
 
 To submit multiple takes:
 
@@ -165,7 +149,7 @@ together.
 If marked takes use different render settings, DreamRender uses each take's own
 output path and frame range.
 
-## 8. Frames Per Batch
+## 7. Frames Per Batch
 
 `Frames per batch` controls how many contiguous frames one worker renders per
 Cinema 4D command-line launch.

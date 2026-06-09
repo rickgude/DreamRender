@@ -1,13 +1,14 @@
 {
   "name": "dreamrender-desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "DreamRender desktop shell.",
   "scripts": {
     "app:v2": "python -m dreamrender app-v2",
     "app:v2:no-browser": "python -c \"import sys; sys.path.insert(0, 'src'); from dreamrender.cli import main; raise SystemExit(main())\" app-v2 --no-browser",
+    "backend:build": "py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name dreamrender-backend --paths src --add-data \"src/dreamrender/app_v2_static;dreamrender/app_v2_static\" --add-data \"cinema4d;cinema4d\" --distpath src-tauri/bin --workpath build/pyinstaller packaging/dreamrender_backend.py",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "npm run backend:build && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

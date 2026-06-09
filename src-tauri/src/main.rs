@@ -55,6 +55,18 @@ fn main() {
 }
 
 fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io::Error> {
+    if let Some(backend) = resource_dir
+        .map(|path| path.join("dreamrender-backend.exe"))
+        .filter(|path| path.exists())
+    {
+        let mut command = Command::new(backend);
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        return command.spawn();
+    }
+
     let repo_root = repo_root(resource_dir);
     let python = find_python(&repo_root).unwrap_or_else(|| "python".to_string());
     let mut command = Command::new(python);

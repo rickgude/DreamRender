@@ -50,24 +50,19 @@ Rust from rustup before running the Tauri commands.
 The Tauri shell starts:
 
 ```text
-python -m dreamrender app-v2 --no-browser
+dreamrender-backend.exe
 ```
 
-Then it opens the DreamRender app interface in a native desktop window.
+In packaged releases, that backend is a bundled PyInstaller sidecar, so users do
+not need Python installed. In development, the app can still be run from source
+with `python -m dreamrender app-v2 --no-browser`.
 
 ## Packaging Notes
 
-The current shell is ready for local development. For a public installer, the
-next step is to bundle Python/DreamRender as a Tauri sidecar so users do not need
-to install Python manually.
-
-Until that packaging step is done, users still need regular Python 3.10+ on each
-machine.
-
-The artist-facing install path is intentionally simple: download a packaged
-DreamRender release, install regular Python if the package does not bundle it,
-double-click `START_DREAMRENDER.vbs`, then use the app to install the Cinema 4D
-plugin.
+Packaged Windows releases bundle the DreamRender Python backend as a standalone
+sidecar. The artist-facing install path is intentionally simple: download the
+packaged `DreamRender_..._x64-setup.exe`, install it, start DreamRender from the
+Start Menu, then use the app to install the Cinema 4D plugin.
 
 User-specific app settings are stored outside the source tree:
 

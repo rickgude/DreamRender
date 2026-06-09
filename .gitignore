@@ -10,6 +10,7 @@ dreamrender.json
 jobs/
 workers/
 *.exe
+dreamrender-backend.spec
 node_modules/
 src-tauri/target/
 src-tauri/gen/
