@@ -229,6 +229,19 @@ class AppV2State:
         self.worker_log: deque[str] = deque(maxlen=1200)
         self.status = "Ready"
         self.worker_should_run = False
+        self.live_cache: dict[str, object] = {
+            "queue": {"jobs": [], "workers": [], "loading": True},
+            "health": [
+                {"label": "Queue", "ok": True, "tone": "warn", "detail": "Checking..."},
+                {"label": "Render Command", "ok": True, "tone": "warn", "detail": "Checking..."},
+                {"label": "Plugin", "ok": True, "tone": "warn", "detail": "Checking..."},
+            ],
+            "gpus": [],
+            "gpu_message": "Checking GPU data...",
+        }
+        self.live_cache_at = 0.0
+        self.live_refreshing = False
+        self.live_refresh_started = 0.0
         self.lock = threading.RLock()
 
     def python_command(self) -> list[str]:
@@ -472,12 +485,8 @@ class AppV2State:
                 self.monitor_process = None
                 if self.worker_should_run:
                     self.start_monitor()
-            share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
-            try:
-                share_snapshot = queue_snapshot(self.share())
-            except Exception as exc:
-                share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
-            gpus, gpu_message = query_gpus()
+            self.refresh_live_async()
+            live = dict(self.live_cache)
             return {
                 "config": self.config,
                 "status": self.status,
@@ -485,12 +494,45 @@ class AppV2State:
                 "worker_running": self.worker_running(),
                 "monitor_running": self.monitor_running(),
                 "monitor_url": self.monitor_url(),
-                "health": self.health(share_snapshot),
-                "queue": share_snapshot,
-                "gpus": gpus,
-                "gpu_message": gpu_message,
+                "health": live.get("health", []),
+                "queue": live.get("queue", {"jobs": [], "workers": []}),
+                "gpus": live.get("gpus", []),
+                "gpu_message": live.get("gpu_message"),
+                "live_generated_at": self.live_cache_at,
+                "live_refreshing": self.live_refreshing,
                 "worker_log": list(self.worker_log)[-400:],
             }
+
+    def refresh_live_async(self) -> None:
+        now = time.time()
+        if self.live_refreshing and now - self.live_refresh_started < 30.0:
+            return
+        if now - self.live_cache_at < 2.0:
+            return
+        self.live_refreshing = True
+        self.live_refresh_started = now
+        threading.Thread(target=self.refresh_live_cache, daemon=True).start()
+
+    def refresh_live_cache(self) -> None:
+        try:
+            share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
+            try:
+                share_snapshot = queue_snapshot(self.share())
+            except Exception as exc:
+                share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
+            gpus, gpu_message = query_gpus()
+            health = self.health(share_snapshot)
+            with self.lock:
+                self.live_cache = {
+                    "queue": share_snapshot,
+                    "health": health,
+                    "gpus": gpus,
+                    "gpu_message": gpu_message,
+                }
+                self.live_cache_at = time.time()
+        finally:
+            with self.lock:
+                self.live_refreshing = False
 
 
 class AppV2Handler(BaseHTTPRequestHandler):
