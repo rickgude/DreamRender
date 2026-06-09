@@ -1020,18 +1020,41 @@ def find_rendered_frame_output(job: dict[str, Any], frame_number: int, since: fl
         f"{frame_number:05d}",
         f"{frame_number:06d}",
     }
-    search_dirs = []
+    metadata = job.get("metadata", {})
+    scene = Path(str(job.get("source_scene") or job.get("scene") or ""))
+    project_folder = Path(str(metadata.get("project_folder") or scene.parent))
+    document_name = str(metadata.get("document_name") or scene.name)
+    project_name = Path(document_name).stem.lower() or scene.stem.lower()
+    search_dirs: list[tuple[Path, bool]] = []
     for output in expand_c4d_output_path(job):
         if output.suffix:
-            search_dirs.append(output.parent)
+            search_dirs.append((output.parent, False))
         else:
-            search_dirs.append(output)
-            search_dirs.append(output.parent)
+            search_dirs.append((output, False))
+            search_dirs.append((output.parent, False))
 
-    for folder in dict.fromkeys(search_dirs):
+    # Redshift AOV output can be stored in renderer-specific settings and does
+    # not always match the main C4D save path. If the normal output lookup does
+    # not find anything, scan likely project render folders as a bounded fallback.
+    project_roots = [project_folder, *project_folder.parents[:3]]
+    for root in project_roots:
+        for name in ("render", "renders", "09_RENDERS", "10_RENDERS", "01_RENDERS", "02_PRE-RENDERS"):
+            candidate = root / name
+            if candidate.exists():
+                search_dirs.append((candidate, True))
+
+    seen: set[str] = set()
+    for folder, recursive in search_dirs:
+        key = str(folder).lower()
+        if key in seen:
+            continue
+        seen.add(key)
         if not folder.exists() or not folder.is_dir():
             continue
-        for path in folder.iterdir():
+        iterator = folder.rglob("*") if recursive else folder.iterdir()
+        for path in iterator:
+            if not path.is_file():
+                continue
             if path.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
             stat = path.stat()
@@ -1042,7 +1065,7 @@ def find_rendered_frame_output(job: dict[str, Any], frame_number: int, since: fl
             if min_age_seconds and time.time() - stat.st_mtime < min_age_seconds:
                 continue
             name = path.stem.lower()
-            if any(token in name for token in frame_tokens):
+            if any(token in name for token in frame_tokens) and (not project_name or project_name in name or not recursive):
                 return {
                     "path": str(path),
                     "size": stat.st_size,
