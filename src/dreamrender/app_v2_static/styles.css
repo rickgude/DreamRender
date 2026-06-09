@@ -932,6 +932,13 @@ textarea {
   font-weight: 750;
   overflow-wrap: anywhere;
 }
+.dashboard-failure.incident {
+  border-color: rgba(255,139,61,.45);
+  background: rgba(255,139,61,.13);
+}
+.dashboard-failure.incident span {
+  color: #7a4718;
+}
 .dashboard-frames {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));

@@ -223,11 +223,15 @@ function render(data) {
 
 function jobState(job) {
   const counts = job.counts || {};
-  if ((counts.failed || 0) > 0 || job.status === "cancelled") return ["failed", "Error"];
-  if (job.status === "done" || job.status === "archived") return ["done", "Done"];
-  if ((counts.rendering || 0) > 0) return ["rendering", "Rendering"];
-  if (job.status === "paused") return ["queued", "Paused"];
+  const rendering = counts.rendering || 0;
+  const queued = counts.queued || 0;
+  const failed = counts.failed || 0;
+  if (job.status === "cancelled") return ["failed", "Cancelled"];
   if (job.status === "draining") return ["rendering", "Draining"];
+  if (rendering > 0) return ["rendering", "Rendering"];
+  if (job.status === "paused") return ["queued", "Paused"];
+  if (job.status === "done" || job.status === "archived") return ["done", "Done"];
+  if (failed > 0) return queued > 0 ? ["queued", "Needs Retry"] : ["failed", "Needs Repair"];
   return ["queued", "Queued"];
 }
 
@@ -364,9 +368,11 @@ function renderDashboardJobInfo(job) {
 function renderFailureSummary(job) {
   const summary = job.failure_summary || {};
   if (!summary.failed) return "";
+  const counts = job.counts || {};
+  const stillActive = (counts.rendering || 0) > 0 || (counts.queued || 0) > 0;
   const reasons = summary.reasons || [];
-  return `<div class="dashboard-failure">
-    <strong>${esc(summary.failed)} failed frame(s)</strong>
+  return `<div class="dashboard-failure ${stillActive ? "incident" : ""}">
+    <strong>${esc(summary.failed)} failed frame(s)${stillActive ? " while job continues" : ""}</strong>
     ${reasons.map(item => `<span>${esc(item.count)}x ${esc(item.reason)}</span>`).join("")}
     ${summary.first_frame ? `<span>First failed frame: ${esc(summary.first_frame)}</span>` : ""}
     ${summary.first_log ? `<span>Log: ${esc(summary.first_log)}</span>` : ""}
