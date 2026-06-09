@@ -340,6 +340,15 @@ body.dashboard-active .shell {
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
+.status-subline {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 
 .card-head {
   display: flex;

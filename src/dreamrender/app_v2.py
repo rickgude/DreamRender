@@ -40,6 +40,7 @@ LEGACY_CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
 STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
+APP_VERSION = "0.1.16"
 WORKER_RESTART_LIMIT = 5
 WORKER_RESTART_WINDOW_SECONDS = 10 * 60
 
@@ -520,6 +521,7 @@ class AppV2State:
             return {
                 "config": self.config,
                 "status": self.status,
+                "app_version": APP_VERSION,
                 "code_signature": CODE_SIGNATURE,
                 "worker_running": self.worker_running(),
                 "monitor_running": self.monitor_running(),

@@ -190,6 +190,7 @@ function render(data) {
   $("#worker-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.worker_running ? `Running as ${config.worker_id}` : "Stopped";
   $("#monitor-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.monitor_running ? "Integrated dashboard" : "Ready";
   $("#app-status").textContent = busy === "start" ? "Starting worker and dashboard" : busy === "stop" ? "Stopping services" : data.status || "Ready";
+  $("#app-version").textContent = `App v${data.app_version || "--"} · data ${formatSnapshotAge(data)} · code ${data.code_signature || "--"}`;
   document.querySelectorAll('[data-widget="worker"], [data-widget="monitor"], [data-widget="status"]').forEach(card => {
     card.classList.toggle("is-working", Boolean(busy));
   });
@@ -262,15 +263,23 @@ function formatSeconds(seconds) {
   if (m) return `${m}m ${String(s).padStart(2, "0")}s`;
   return `${s}s`;
 }
+function formatSnapshotAge(data) {
+  const generated = Number(data?.live_generated_at || 0);
+  if (!generated) return data?.live_refreshing ? "refreshing" : "not loaded yet";
+  const age = Math.max(0, Date.now() / 1000 - generated);
+  const label = `${formatSeconds(age)} old`;
+  return data?.live_refreshing ? `${label}, refreshing` : label;
+}
 
 function renderDashboard(queue, appData) {
   if (state.dashboardDrag) return;
   const workers = queue.workers || [];
   const jobs = queue.jobs || [];
   const repair = queue.repair || {};
+  const freshness = `App v${appData.app_version || "--"} · data ${formatSnapshotAge(appData)} · code ${queue.code_signature || appData.code_signature || "--"}`;
   $("#dashboard-health").textContent = appData.worker_running
-    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  Code: ${queue.code_signature || "--"}`
-    : "Start DreamRender to view live workers and jobs.";
+    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  ${freshness}`
+    : `Start DreamRender to view live workers and jobs. ${freshness}`;
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
     const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
