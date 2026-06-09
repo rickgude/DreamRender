@@ -232,6 +232,8 @@ class AppV2State:
         self.lock = threading.RLock()
 
     def python_command(self) -> list[str]:
+        if getattr(sys, "frozen", False):
+            return [sys.executable]
         return [sys.executable, "-m", "dreamrender"]
 
     def persist(self) -> None:

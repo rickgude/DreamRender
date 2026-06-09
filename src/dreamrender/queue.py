@@ -7,6 +7,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -25,6 +26,17 @@ IMAGE_EXTENSIONS = BROWSER_PREVIEW_EXTENSIONS | CONVERTIBLE_PREVIEW_EXTENSIONS
 
 
 def source_signature() -> str:
+    env_signature = os.environ.get("DREAMRENDER_CODE_SIGNATURE", "").strip()
+    if env_signature:
+        return env_signature[:10]
+    if getattr(sys, "frozen", False):
+        try:
+            executable = Path(sys.executable)
+            stat = executable.stat()
+            frozen_fingerprint = f"{executable.name}:{stat.st_size}:{stat.st_mtime_ns}"
+            return hashlib.sha1(frozen_fingerprint.encode("utf-8")).hexdigest()[:10]
+        except OSError:
+            pass
     parts = []
     for path in sorted(Path(__file__).parent.glob("*.py")):
         try:
