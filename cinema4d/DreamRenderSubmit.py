@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import webbrowser
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ DEFAULT_JOB_FOLDER = "DreamRenderJobs"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), "DreamRenderSubmit.json")
 SUBMIT_HISTORY_FILENAME = "submit_history.json"
 CACHE_EXTENSIONS = {".abc", ".vdb", ".rs", ".ass", ".usd", ".usda", ".usdc", ".bgeo", ".bgeo.sc"}
+DREAMRENDER_JOB_SUFFIX_RE = re.compile(r"_\d{8}-\d{6}-[0-9a-fA-F]{8}$")
 
 IDC_SHARE = 1001
 IDC_NAME = 1002
@@ -135,6 +137,26 @@ def get_document_name(doc):
     if not name.lower().endswith(".c4d"):
         name += ".c4d"
     return name
+
+
+def strip_dreamrender_job_suffix(stem):
+    clean = stem
+    while True:
+        stripped = DREAMRENDER_JOB_SUFFIX_RE.sub("", clean)
+        if stripped == clean:
+            return clean
+        clean = stripped
+
+
+def get_clean_document_name(doc):
+    name = get_document_name(doc)
+    stem, ext = os.path.splitext(name)
+    clean_stem = strip_dreamrender_job_suffix(stem) or stem
+    return clean_stem + (ext or ".c4d")
+
+
+def get_project_token_name(doc):
+    return os.path.splitext(get_clean_document_name(doc))[0]
 
 
 def source_scene_path(doc):
@@ -1585,7 +1607,7 @@ class DreamRenderDialog(gui.GeDialog):
 
     def InitValues(self):
         self.SetString(IDC_SHARE, self.config.get("share", DEFAULT_SHARE))
-        self.SetString(IDC_NAME, os.path.splitext(get_document_name(self.doc))[0])
+        self.SetString(IDC_NAME, get_project_token_name(self.doc))
         self.SetInt32(IDC_CHUNK_SIZE, int(self.config.get("chunk_size", 5)))
         self.SetBool(IDC_MARKED_TAKES, bool(self.config.get("marked_takes", False)))
         self.SetBool(IDC_IGNORE_WARNINGS, bool(self.config.get("ignore_warnings", False)))
@@ -1615,7 +1637,7 @@ class DreamRenderDialog(gui.GeDialog):
 
     def collect_submit_values(self):
         share = self.GetString(IDC_SHARE).strip()
-        name = self.GetString(IDC_NAME).strip() or os.path.splitext(get_document_name(self.doc))[0]
+        name = self.GetString(IDC_NAME).strip() or get_project_token_name(self.doc)
         self.start, self.end, self.frame_source = get_render_range(self.doc)
         output = get_output_path_info(self.doc)[0]
         start = self.start
@@ -1712,7 +1734,9 @@ class DreamRenderDialog(gui.GeDialog):
         job_stamp = "%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"), uuid.uuid4().hex[:8])
         job_scene_dir = os.path.join(jobs_root, job_stamp)
         os.makedirs(job_scene_dir)
-        scene_path = os.path.join(job_scene_dir, get_document_name(self.doc))
+        clean_document_name = get_clean_document_name(self.doc)
+        project_token_name = os.path.splitext(clean_document_name)[0]
+        scene_path = os.path.join(job_scene_dir, clean_document_name)
 
         flags = c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST
         saved = c4d.documents.SaveDocument(self.doc, scene_path, flags, c4d.FORMAT_C4DEXPORT)
@@ -1736,7 +1760,8 @@ class DreamRenderDialog(gui.GeDialog):
         try:
             common_metadata = {
                 "project_folder": project,
-                "document_name": get_document_name(self.doc),
+                "document_name": clean_document_name,
+                "project_token_name": project_token_name,
                 "source_scene": source_scene,
                 "source_scene_mtime": source_scene_mtime,
                 "source_scene_saved_at": utc_now(),

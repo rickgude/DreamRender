@@ -979,7 +979,7 @@ def expand_c4d_output_path(job: dict[str, Any]) -> list[Path]:
     scene = Path(str(job.get("source_scene") or job.get("scene") or ""))
     project_folder = Path(str(metadata.get("project_folder") or scene.parent))
     document_name = str(metadata.get("document_name") or scene.name)
-    project_name = Path(document_name).stem or scene.stem
+    project_name = str(metadata.get("project_token_name") or "").strip() or Path(document_name).stem or scene.stem
     take_name = str(metadata.get("take_name") or "")
     replacements = {
         "$prj": project_name,
@@ -1024,7 +1024,7 @@ def find_rendered_frame_output(job: dict[str, Any], frame_number: int, since: fl
     scene = Path(str(job.get("source_scene") or job.get("scene") or ""))
     project_folder = Path(str(metadata.get("project_folder") or scene.parent))
     document_name = str(metadata.get("document_name") or scene.name)
-    project_name = Path(document_name).stem.lower() or scene.stem.lower()
+    project_name = (str(metadata.get("project_token_name") or "").strip() or Path(document_name).stem or scene.stem).lower()
     search_dirs: list[tuple[Path, bool]] = []
     for output in expand_c4d_output_path(job):
         if output.suffix:
