@@ -21,14 +21,20 @@ fn main() {
 
     tauri::Builder::default()
         .setup(move |app| {
+            let resource_dir = app.path().resource_dir().ok();
             if !backend_is_ready() {
-                let child = start_python_backend().map_err(|error| error.to_string())?;
-                *backend_for_setup.lock().map_err(|error| error.to_string())? = Some(child);
+                let child = start_python_backend(resource_dir.as_ref())
+                    .map_err(|error| error.to_string())?;
+                *backend_for_setup
+                    .lock()
+                    .map_err(|error| error.to_string())? = Some(child);
             }
-            wait_for_backend(Duration::from_secs(8));
-            if let Some(window) = app.get_webview_window("main") {
-                let url = Url::parse("http://127.0.0.1:8777").map_err(|error| error.to_string())?;
-                window.navigate(url).map_err(|error| error.to_string())?;
+            if wait_for_backend(Duration::from_secs(12)) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let url =
+                        Url::parse("http://127.0.0.1:8777").map_err(|error| error.to_string())?;
+                    window.navigate(url).map_err(|error| error.to_string())?;
+                }
             }
             Ok(())
         })
@@ -48,8 +54,8 @@ fn main() {
         .expect("error while running DreamRender");
 }
 
-fn start_python_backend() -> Result<Child, std::io::Error> {
-    let repo_root = repo_root();
+fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io::Error> {
+    let repo_root = repo_root(resource_dir);
     let python = find_python(&repo_root).unwrap_or_else(|| "python".to_string());
     let mut command = Command::new(python);
     command
@@ -65,7 +71,10 @@ fn start_python_backend() -> Result<Child, std::io::Error> {
     command.spawn()
 }
 
-fn repo_root() -> PathBuf {
+fn repo_root(resource_dir: Option<&PathBuf>) -> PathBuf {
+    if let Some(path) = resource_dir.and_then(|path| find_repo_from(path.clone())) {
+        return path;
+    }
     env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
@@ -95,21 +104,28 @@ fn find_python(repo_root: &PathBuf) -> Option<String> {
         return Some(local_python.to_string_lossy().to_string());
     }
     for candidate in ["pythonw", "python"] {
-        if Command::new(candidate).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
+        if Command::new(candidate)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+        {
             return Some(candidate.to_string());
         }
     }
     None
 }
 
-fn wait_for_backend(timeout: Duration) {
+fn wait_for_backend(timeout: Duration) -> bool {
     let started = Instant::now();
     while started.elapsed() < timeout {
         if backend_is_ready() {
-            return;
+            return true;
         }
         thread::sleep(Duration::from_millis(100));
     }
+    false
 }
 
 fn backend_is_ready() -> bool {
