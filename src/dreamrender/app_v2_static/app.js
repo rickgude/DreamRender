@@ -315,7 +315,6 @@ function renderDashboardJob(job) {
   ];
   if (job.status === "paused") actions.push(`<button data-dashboard-action="resume" data-job="${esc(job.id)}">Resume</button>`);
   else if (!isDone && job.status !== "cancelled") actions.push(`<button data-dashboard-action="pause" data-job="${esc(job.id)}">Pause</button>`);
-  if (hasRendering) actions.push(`<button data-dashboard-action="drain" data-job="${esc(job.id)}">Stop After Batch</button>`);
   if ((counts.failed || 0) > 0 || job.status === "cancelled") {
     actions.push(`<button data-dashboard-action="requeue" data-job="${esc(job.id)}">Retry Failed</button>`);
     if ((counts.failed || 0) > 0) actions.push(`<button data-dashboard-action="mark_failed_done" data-job="${esc(job.id)}">Mark Failed Done</button>`);
@@ -597,11 +596,19 @@ $("#native-dashboard").addEventListener("click", async event => {
   }
   button.disabled = true;
   button.classList.add("is-loading");
+  const action = button.dataset.dashboardAction;
+  const workerId = button.dataset.worker || "";
+  if (action === "worker_toggle_stop") {
+    const nextState = button.getAttribute("aria-pressed") !== "true";
+    button.classList.toggle("active", nextState);
+    button.setAttribute("aria-pressed", nextState ? "true" : "false");
+    showAppFeedback("working", nextState ? `${workerId} will stop after the current batch.` : `${workerId} will keep rendering new batches.`);
+  }
   try {
     await post("/api/action", {
-      action: button.dataset.dashboardAction,
+      action,
       job_id: button.dataset.job || "",
-      worker_id: button.dataset.worker || "",
+      worker_id: workerId,
       direction: button.dataset.direction || "",
     });
     await refresh();

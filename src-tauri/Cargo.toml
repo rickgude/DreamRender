@@ -1,6 +1,6 @@
 [package]
 name = "dreamrender"
-version = "0.1.11"
+version = "0.1.12"
 description = "DreamRender desktop shell"
 authors = ["DreamRender"]
 license = "MIT"

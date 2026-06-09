@@ -513,6 +513,10 @@ class AppV2State:
         self.live_refresh_started = now
         threading.Thread(target=self.refresh_live_cache, daemon=True).start()
 
+    def invalidate_live_cache(self) -> None:
+        with self.lock:
+            self.live_cache_at = 0.0
+
     def refresh_live_cache(self) -> None:
         try:
             share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
@@ -602,6 +606,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                     clear_worker_stop_after_batch_request(self.state.share(), worker_id)
                 else:
                     request_worker_stop_after_batch(self.state.share(), worker_id)
+            self.state.invalidate_live_cache()
             response_json(self, {"ok": True})
         elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "mark_failed_done", "open_output"}:
             job_id = str(payload.get("job_id", ""))
