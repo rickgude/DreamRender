@@ -40,6 +40,8 @@ LEGACY_CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
 STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
+WORKER_RESTART_LIMIT = 5
+WORKER_RESTART_WINDOW_SECONDS = 10 * 60
 
 
 def bundled_root() -> Path:
@@ -229,6 +231,8 @@ class AppV2State:
         self.worker_log: deque[str] = deque(maxlen=1200)
         self.status = "Ready"
         self.worker_should_run = False
+        self.worker_restart_times: deque[float] = deque()
+        self.worker_expected_exit = False
         self.live_cache: dict[str, object] = {
             "queue": {"jobs": [], "workers": [], "loading": True},
             "health": [
@@ -268,6 +272,8 @@ class AppV2State:
         with self.lock:
             self.share().init()
             self.worker_should_run = True
+            self.worker_expected_exit = False
+            self.worker_restart_times.clear()
             self.start_worker()
             self.status = "DreamRender running"
 
@@ -280,6 +286,8 @@ class AppV2State:
             self.worker_process = None
             self.monitor_process = None
             self.worker_should_run = False
+            self.worker_expected_exit = True
+            self.worker_restart_times.clear()
             self.status = "DreamRender stopped"
 
     def start_worker(self) -> None:
@@ -312,6 +320,28 @@ class AppV2State:
             creationflags=creation_flags(),
         )
         threading.Thread(target=self.read_worker_log, args=(self.worker_process,), daemon=True).start()
+
+    def should_restart_worker(self, return_code: int | None) -> tuple[bool, str]:
+        if not self.worker_should_run or not self.config.get("keep_worker_running"):
+            return False, f"Worker exited with code {return_code}"
+        if return_code == 75:
+            self.worker_expected_exit = False
+            return True, "Worker restarted after requested restart"
+        if self.worker_expected_exit and return_code == 76:
+            self.worker_should_run = False
+            self.worker_expected_exit = False
+            self.worker_restart_times.clear()
+            return False, "Worker stopped after the requested batch"
+
+        now = time.time()
+        while self.worker_restart_times and now - self.worker_restart_times[0] > WORKER_RESTART_WINDOW_SECONDS:
+            self.worker_restart_times.popleft()
+        self.worker_restart_times.append(now)
+        attempt = len(self.worker_restart_times)
+        if attempt >= WORKER_RESTART_LIMIT:
+            self.worker_should_run = False
+            return False, f"Worker gave up after {attempt} exits in {WORKER_RESTART_WINDOW_SECONDS // 60} minutes. Last exit code: {return_code}"
+        return True, f"Worker restarted after exit code {return_code} ({attempt}/{WORKER_RESTART_LIMIT})"
 
     def start_monitor(self) -> None:
         if self.monitor_running():
@@ -476,11 +506,11 @@ class AppV2State:
             if self.worker_process and self.worker_process.poll() is not None:
                 return_code = self.worker_process.returncode
                 self.worker_process = None
-                if return_code == 75 or (self.worker_should_run and self.config.get("keep_worker_running") and return_code != 76):
-                    self.status = f"Worker restarted after exit code {return_code}"
+                should_restart, message = self.should_restart_worker(return_code)
+                self.status = message
+                self.worker_log.append(message)
+                if should_restart:
                     self.start_worker()
-                else:
-                    self.status = f"Worker exited with code {return_code}"
             if self.monitor_process and self.monitor_process.poll() is not None:
                 self.monitor_process = None
                 if self.worker_should_run:
@@ -601,11 +631,17 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 request_worker_restart(self.state.share(), worker_id)
             elif action == "worker_stop_now":
                 request_worker_stop_now(self.state.share(), worker_id)
+                if worker_id == str(self.state.config.get("worker_id")):
+                    self.state.worker_expected_exit = True
             else:
                 if worker_stop_after_batch_requested(self.state.share(), worker_id):
                     clear_worker_stop_after_batch_request(self.state.share(), worker_id)
+                    if worker_id == str(self.state.config.get("worker_id")):
+                        self.state.worker_expected_exit = False
                 else:
                     request_worker_stop_after_batch(self.state.share(), worker_id)
+                    if worker_id == str(self.state.config.get("worker_id")):
+                        self.state.worker_expected_exit = True
             self.state.invalidate_live_cache()
             response_json(self, {"ok": True})
         elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "mark_failed_done", "open_output"}:
