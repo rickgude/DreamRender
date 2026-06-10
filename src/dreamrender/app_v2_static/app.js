@@ -320,9 +320,19 @@ function renderDashboard(queue, appData) {
   const jobs = (queue.jobs || []).filter(job => !state.optimisticHiddenJobs.has(job.id));
   const repair = queue.repair || {};
   const freshness = `App v${appData.app_version || "--"} - data ${formatSnapshotAge(appData)} - code ${queue.code_signature || appData.code_signature || "--"}`;
-  $("#dashboard-health").textContent = appData.worker_running
-    ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  ${freshness}`
-    : `Start DreamRender to view live workers and jobs. ${freshness}`;
+  const queuePath = queue.share || appData.queue_share || appData.share_path || appData.config?.share || "";
+  const localWorkerId = appData.local_worker_id || appData.config?.worker_id || "this machine";
+  const diagnostics = [];
+  if (appData.worker_running && appData.live_generated_at && appData.local_worker_visible === false) {
+    diagnostics.push(`${esc(localWorkerId)} is running, but no heartbeat was found in this queue. Check that this machine uses the exact same queue folder.`);
+  }
+  if (queue.error) diagnostics.push(`Queue read error: ${esc(queue.error)}`);
+  const autoRepair = repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean.";
+  $("#dashboard-health").innerHTML = `
+    <div>${appData.worker_running ? autoRepair : "Start DreamRender to view live workers and jobs."} ${esc(freshness)}</div>
+    <div class="dashboard-queue-path">Queue: ${esc(queuePath || "not configured")}${appData.local_worker_visible === false ? ` - Local worker missing: ${esc(localWorkerId)}` : ""}</div>
+    ${diagnostics.map(message => `<div class="dashboard-alert">${message}</div>`).join("")}
+  `;
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
     const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
@@ -343,7 +353,7 @@ function renderDashboard(queue, appData) {
         </div>
       </div>
     </article>`;
-  }).join("") : `<div class="dashboard-empty"><strong>No workers yet</strong><span>Start DreamRender on a render node.</span></div>`;
+  }).join("") : `<div class="dashboard-empty"><strong>No workers in this queue.</strong><span>${appData.worker_running ? `This app is running as ${esc(appData.local_worker_id || "this machine")}, but this queue has no worker heartbeat. Check the Queue path on every machine.` : "Start DreamRender on a render node."}</span></div>`;
   if (queue.error) {
     $("#dashboard-jobs").innerHTML = `<div class="dashboard-error">${esc(queue.error)}</div>`;
     return;

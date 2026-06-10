@@ -559,6 +559,19 @@ class AppV2State:
                     self.start_monitor()
             self.refresh_live_async()
             live = dict(self.live_cache)
+            queue = live.get("queue", {"jobs": [], "workers": []})
+            queue_dict = queue if isinstance(queue, dict) else {"jobs": [], "workers": []}
+            workers = [worker for worker in queue_dict.get("workers", []) if isinstance(worker, dict)]
+            local_worker_id = str(self.config.get("worker_id", ""))
+            local_worker_visible = any(str(worker.get("worker_id")) == local_worker_id for worker in workers)
+            health = list(live.get("health", []))
+            if self.worker_running() and self.live_cache_at > 0 and not local_worker_visible:
+                health.append({
+                    "label": "This Machine",
+                    "ok": False,
+                    "tone": "error",
+                    "detail": f"{local_worker_id} is running but has no heartbeat in this queue path",
+                })
             return {
                 "config": self.config,
                 "status": self.status,
@@ -567,8 +580,12 @@ class AppV2State:
                 "worker_running": self.worker_running(),
                 "monitor_running": self.monitor_running(),
                 "monitor_url": self.monitor_url(),
-                "health": live.get("health", []),
-                "queue": live.get("queue", {"jobs": [], "workers": []}),
+                "health": health,
+                "queue": queue_dict,
+                "share_path": str(self.config.get("share", "")),
+                "queue_share": str(queue_dict.get("share", "")),
+                "local_worker_id": local_worker_id,
+                "local_worker_visible": local_worker_visible,
                 "gpus": live.get("gpus", []),
                 "gpu_message": live.get("gpu_message"),
                 "live_generated_at": self.live_cache_at,
