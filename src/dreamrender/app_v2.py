@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import shutil
@@ -40,9 +41,22 @@ LEGACY_CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
 STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
-APP_VERSION = "0.1.16"
+APP_VERSION = "0.1.17"
 WORKER_RESTART_LIMIT = 5
 WORKER_RESTART_WINDOW_SECONDS = 10 * 60
+WINDOWS_ERROR_MODE = 0x0001 | 0x0002 | 0x8000
+
+
+def set_windows_error_mode() -> None:
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.kernel32.SetErrorMode(WINDOWS_ERROR_MODE)
+    except Exception:
+        pass
+
+
+set_windows_error_mode()
 
 
 def bundled_root() -> Path:
@@ -149,12 +163,14 @@ def default_config() -> dict[str, object]:
 
 def response_json(handler: BaseHTTPRequestHandler, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
     body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except OSError:
+        pass
 
 def creation_flags() -> int:
     return subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -162,7 +178,16 @@ def creation_flags() -> int:
 
 def process_exists(pid: int) -> bool:
     if os.name == "nt":
-        result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True, creationflags=creation_flags())
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=creation_flags(),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
         return str(pid) in result.stdout
     try:
         os.kill(pid, 0)
@@ -173,13 +198,21 @@ def process_exists(pid: int) -> bool:
 
 def stop_pid_tree(pid: int) -> None:
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags())
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                creationflags=creation_flags(),
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
     else:
         try:
             os.kill(pid, 15)
         except OSError:
             pass
-
 
 def find_nvidia_smi() -> str | None:
     found = shutil.which("nvidia-smi")
@@ -247,6 +280,11 @@ class AppV2State:
         self.live_cache_at = 0.0
         self.live_refreshing = False
         self.live_refresh_started = 0.0
+        self.gpu_cache: list[dict[str, object]] = []
+        self.gpu_message_cache: str | None = "Checking GPU data..."
+        self.gpu_failures = 0
+        self.gpu_backoff_until = 0.0
+        self.gpu_last_query = 0.0
         self.lock = threading.RLock()
 
     def python_command(self) -> list[str]:
@@ -549,6 +587,33 @@ class AppV2State:
         with self.lock:
             self.live_cache_at = 0.0
 
+    def query_gpus_cached(self) -> tuple[list[dict[str, object]], str | None]:
+        now = time.time()
+        if now < self.gpu_backoff_until:
+            wait = max(1, int(self.gpu_backoff_until - now))
+            message = f"GPU monitor paused after nvidia-smi errors. Retrying in {wait}s."
+            if self.gpu_cache:
+                return list(self.gpu_cache), "GPU data is stale. " + message
+            return [], message
+        if now - self.gpu_last_query < 5.0:
+            return list(self.gpu_cache), self.gpu_message_cache
+
+        self.gpu_last_query = now
+        gpus, message = query_gpus()
+        if gpus:
+            self.gpu_cache = gpus
+            self.gpu_message_cache = message
+            self.gpu_failures = 0
+            self.gpu_backoff_until = 0.0
+            return gpus, message
+
+        self.gpu_failures += 1
+        delay = min(300, 15 * self.gpu_failures)
+        self.gpu_backoff_until = now + delay
+        self.gpu_message_cache = f"GPU data unavailable: {message or 'nvidia-smi failed'}. Retrying in {delay}s."
+        if self.gpu_cache:
+            return list(self.gpu_cache), "GPU data is stale. " + self.gpu_message_cache
+        return [], self.gpu_message_cache
     def refresh_live_cache(self) -> None:
         try:
             share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
@@ -556,7 +621,7 @@ class AppV2State:
                 share_snapshot = queue_snapshot(self.share())
             except Exception as exc:
                 share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
-            gpus, gpu_message = query_gpus()
+            gpus, gpu_message = self.query_gpus_cached()
             health = self.health(share_snapshot)
             with self.lock:
                 self.live_cache = {
@@ -725,17 +790,36 @@ class AppV2Handler(BaseHTTPRequestHandler):
 
 
 def run_app_v2(host: str = "127.0.0.1", port: int = 8777, open_browser: bool = True) -> None:
+    set_windows_error_mode()
     state = AppV2State()
     handler = type("DreamRenderAppV2Handler", (AppV2Handler,), {"state": state})
     server = ThreadingHTTPServer((host, port), handler)
+    server.timeout = 1.0
     url = f"http://{host}:{port}/"
     if open_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     print(f"DreamRender App running at {url}", flush=True)
     try:
-        server.serve_forever()
+        while True:
+            try:
+                server.handle_request()
+            except OSError as exc:
+                message = f"DreamRender system resource warning: {exc}"
+                with state.lock:
+                    state.status = message
+                    state.worker_log.append(message)
+                time.sleep(2)
+    except KeyboardInterrupt:
+        pass
     finally:
-        state.stop()
+        try:
+            state.stop()
+        except Exception:
+            pass
+        try:
+            server.server_close()
+        except Exception:
+            pass
 
 
 def main() -> None:

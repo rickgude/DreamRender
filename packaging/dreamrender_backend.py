@@ -1,8 +1,9 @@
 import sys
 import os
+import traceback
 from pathlib import Path
 
-from dreamrender.app_v2 import run_app_v2
+from dreamrender.app_v2 import run_app_v2, set_windows_error_mode
 from dreamrender.cli import main as cli_main
 
 
@@ -25,8 +26,24 @@ def ensure_cli_streams() -> None:
             sys.stderr = sys.stdout
 
 
+def log_fatal_exception() -> None:
+    try:
+        with log_path().open("a", encoding="utf-8") as handle:
+            handle.write("\nDreamRender backend crashed:\n")
+            traceback.print_exc(file=handle)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        ensure_cli_streams()
-        raise SystemExit(cli_main())
-    run_app_v2(open_browser=False)
+    set_windows_error_mode()
+    try:
+        if len(sys.argv) > 1:
+            ensure_cli_streams()
+            raise SystemExit(cli_main())
+        run_app_v2(open_browser=False)
+    except SystemExit:
+        raise
+    except BaseException:
+        log_fatal_exception()
+        raise SystemExit(1)
