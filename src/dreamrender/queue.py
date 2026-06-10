@@ -1260,8 +1260,11 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
         except Exception:
             continue
         job_id = str(job.get("id") or job_dir.name)
-        job_statuses[job_id] = job.get("status", "unknown")
+        job_status = str(job.get("status", "unknown"))
+        job_statuses[job_id] = job_status
         job_names[job_id] = job.get("name", job_id)
+        if job_status in {"done", "cancelled", "archived"}:
+            continue
         for frame_path in (job_dir / "frames").glob("*.json"):
             try:
                 frame = read_json(frame_path)
@@ -1362,7 +1365,7 @@ def empty_repair_result() -> dict[str, Any]:
     return {"jobs": [], "changed": 0, "outputs": 0, "stale_failed": 0}
 
 
-def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, Any]:
+def queue_snapshot(share: Share, include_archived: bool = False, max_completed_jobs: int | None = None) -> dict[str, Any]:
     repair_result = empty_repair_result()
     workers = list_workers(share)
     active_job_ids = {
@@ -1371,8 +1374,31 @@ def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, An
         if isinstance(worker.get("active"), dict) and worker["active"].get("job_id")
     }
     seen_job_ids = set()
+    selected_job_ids: set[str] | None = None
+    hidden_completed_jobs = 0
+    if max_completed_jobs is not None and max_completed_jobs >= 0 and not include_archived:
+        always_visible: set[str] = set(active_job_ids)
+        completed: list[tuple[str, str]] = []
+        for job_dir in list_visible_jobs(share, include_archived):
+            try:
+                job = read_json(job_dir / "job.json")
+            except Exception:
+                always_visible.add(job_dir.name)
+                continue
+            status = str(job.get("status", "queued"))
+            if status in {"done", "cancelled"} and job_dir.name not in active_job_ids:
+                timestamp = str(job.get("updated_at") or job.get("created_at") or "")
+                completed.append((timestamp, job_dir.name))
+            else:
+                always_visible.add(job_dir.name)
+        completed.sort(reverse=True)
+        recent_completed = {job_id for _timestamp, job_id in completed[:max_completed_jobs]}
+        selected_job_ids = always_visible | recent_completed
+        hidden_completed_jobs = max(0, len(completed) - len(recent_completed))
     jobs = []
     for job_dir in list_visible_jobs(share, include_archived):
+        if selected_job_ids is not None and job_dir.name not in selected_job_ids:
+            continue
         seen_job_ids.add(job_dir.name)
         summary = summarize_job(job_dir)
         archive_pending = summary.get("metadata", {}).get("archive_when_done")
@@ -1399,6 +1425,7 @@ def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, An
         "workers": workers,
         "code_signature": CODE_SIGNATURE,
         "repair": repair_result,
+        "hidden_completed_jobs": hidden_completed_jobs,
     }
 
 

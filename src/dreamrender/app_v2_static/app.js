@@ -201,7 +201,8 @@ function selectTab(tabId) {
 }
 
 async function refresh() {
-  const wantsFreshQueue = document.body.classList.contains("dashboard-active");
+  const snapshotAge = state.data?.live_generated_at ? (Date.now() / 1000 - Number(state.data.live_generated_at)) : Infinity;
+  const wantsFreshQueue = document.body.classList.contains("dashboard-active") && snapshotAge > 5;
   const data = await fetchJson(wantsFreshQueue ? "/api/state?fresh=1" : "/api/state", {}, wantsFreshQueue ? 15000 : 10000);
   state.data = data;
   state.initialized = true;
@@ -331,6 +332,9 @@ function renderDashboard(queue, appData) {
   const diagnostics = [];
   if (appData.worker_running && appData.live_generated_at && appData.local_worker_visible === false) {
     diagnostics.push(`${esc(localWorkerId)} is running, but no heartbeat was found in this queue. Check that this machine uses the exact same queue folder.`);
+  }
+  if (queue.hidden_completed_jobs) {
+    diagnostics.push(`${esc(queue.hidden_completed_jobs)} older completed job(s) are hidden to keep network dashboard refresh fast.`);
   }
   if (queue.error) diagnostics.push(`Queue read error: ${esc(queue.error)}`);
   const queueState = queue.stale ? "Showing last known queue data while DreamRender reconnects." : appData.worker_running ? "Dashboard live." : "Start DreamRender to view live workers and jobs.";

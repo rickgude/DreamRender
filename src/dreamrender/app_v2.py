@@ -47,6 +47,7 @@ C4D_VERSION = "2026"
 APP_VERSION = __version__
 WORKER_RESTART_LIMIT = 5
 WORKER_RESTART_WINDOW_SECONDS = 10 * 60
+APP_COMPLETED_JOB_LIMIT = 8
 WINDOWS_ERROR_MODE = 0x0001 | 0x0002 | 0x8000
 
 
@@ -672,9 +673,15 @@ class AppV2State:
         return [], self.gpu_message_cache
     def refresh_live_cache(self) -> None:
         try:
+            gpus, gpu_message = self.query_gpus_cached()
+            with self.lock:
+                live_cache = dict(self.live_cache)
+                live_cache["gpus"] = gpus
+                live_cache["gpu_message"] = gpu_message
+                self.live_cache = live_cache
             share_snapshot: dict[str, object] = {"jobs": [], "workers": []}
             try:
-                share_snapshot = queue_snapshot(self.share())
+                share_snapshot = queue_snapshot(self.share(), max_completed_jobs=APP_COMPLETED_JOB_LIMIT)
             except Exception as exc:
                 with self.lock:
                     previous = self.live_cache.get("queue")
@@ -684,7 +691,6 @@ class AppV2State:
                     share_snapshot["error"] = str(exc)
                 else:
                     share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
-            gpus, gpu_message = self.query_gpus_cached()
             health = self.health(share_snapshot)
             with self.lock:
                 self.live_cache = {
