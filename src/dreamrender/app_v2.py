@@ -316,6 +316,7 @@ class AppV2State:
             self.worker_restart_times.clear()
             self.start_worker()
             self.status = "DreamRender running"
+            self.invalidate_live_cache()
 
     def stop(self) -> None:
         with self.lock:
@@ -329,6 +330,7 @@ class AppV2State:
             self.worker_expected_exit = True
             self.worker_restart_times.clear()
             self.status = "DreamRender stopped"
+            self.invalidate_live_cache()
 
     def start_worker(self) -> None:
         if self.worker_running():
@@ -578,11 +580,17 @@ class AppV2State:
         now = time.time()
         if self.live_refreshing and now - self.live_refresh_started < 30.0:
             return
-        if now - self.live_cache_at < 2.0:
+        if now - self.live_cache_at < 1.0:
             return
         self.live_refreshing = True
         self.live_refresh_started = now
         threading.Thread(target=self.refresh_live_cache, daemon=True).start()
+
+    def refresh_live_now(self) -> None:
+        with self.lock:
+            self.live_refreshing = True
+            self.live_refresh_started = time.time()
+        self.refresh_live_cache()
 
     def invalidate_live_cache(self) -> None:
         with self.lock:
@@ -689,10 +697,12 @@ class AppV2Handler(BaseHTTPRequestHandler):
             response_json(self, {"ok": True})
         elif action == "repair":
             result = repair_queue(self.state.share(), min_output_age_seconds=0)
+            self.state.refresh_live_now()
             response_json(self, {"ok": True, "repair": result})
         elif action == "repair_job":
             job_id = str(payload.get("job_id", ""))
             result = repair_queue(self.state.share(), job_id or None, min_output_age_seconds=0)
+            self.state.refresh_live_now()
             response_json(self, {"ok": True, "repair": result})
         elif action in {"worker_restart", "worker_toggle_stop", "worker_stop_now"}:
             worker_id = str(payload.get("worker_id", ""))
@@ -714,7 +724,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                     request_worker_stop_after_batch(self.state.share(), worker_id)
                     if worker_id == str(self.state.config.get("worker_id")):
                         self.state.worker_expected_exit = True
-            self.state.invalidate_live_cache()
+            self.state.refresh_live_now()
             response_json(self, {"ok": True})
         elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "mark_failed_done", "open_output"}:
             job_id = str(payload.get("job_id", ""))
@@ -737,6 +747,8 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 mark_failed_done(self.state.share(), job_id)
             elif action == "open_output":
                 self.state.open_output_folder(job_id)
+            if action != "open_output":
+                self.state.refresh_live_now()
             response_json(self, {"ok": True})
         elif action == "move_job":
             job_id = str(payload.get("job_id", ""))
@@ -752,6 +764,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 return
             job_ids[index], job_ids[target] = job_ids[target], job_ids[index]
             set_job_priorities(self.state.share(), job_ids)
+            self.state.refresh_live_now()
             response_json(self, {"ok": True})
         elif action == "reorder":
             job_ids = payload.get("job_ids", [])
@@ -759,6 +772,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 response_json(self, {"ok": False, "message": "Missing job order."}, HTTPStatus.BAD_REQUEST)
                 return
             set_job_priorities(self.state.share(), [str(job_id) for job_id in job_ids])
+            self.state.refresh_live_now()
             response_json(self, {"ok": True})
         elif action == "install_plugin":
             ok, message = self.state.install_plugin()

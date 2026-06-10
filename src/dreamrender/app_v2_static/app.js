@@ -3,6 +3,9 @@ const state = {
   drag: null,
   dashboardDrag: null,
   toggleBusy: null,
+  dashboardPendingJobs: new Map(),
+  dashboardPendingWorkers: new Map(),
+  optimisticHiddenJobs: new Set(),
   initialized: false,
 };
 const layoutKey = "dreamrender.app.bentoLayout.v3";
@@ -98,6 +101,41 @@ function clearToggleBusy(message) {
   render(state.data || {});
 }
 
+
+function dashboardActionLabel(action) {
+  return ({
+    delete: "Deleting job...",
+    repair_job: "Repairing job...",
+    repair: "Repairing queue...",
+    requeue: "Retrying failed frames...",
+    mark_failed_done: "Marking failed frames done...",
+    pause: "Pausing job...",
+    resume: "Resuming job...",
+    cancel: "Cancelling job...",
+    move_job: "Saving priority...",
+    reorder: "Saving priority order...",
+    worker_restart: "Requesting worker restart...",
+    worker_toggle_stop: "Updating worker stop mode...",
+    worker_stop_now: "Stopping worker...",
+  })[action] || "Syncing dashboard...";
+}
+
+function setDashboardPending({ action, jobId = "", workerId = "" }) {
+  const label = dashboardActionLabel(action);
+  if (jobId) state.dashboardPendingJobs.set(jobId, { action, label });
+  if (workerId) state.dashboardPendingWorkers.set(workerId, { action, label });
+  if (action === "delete" && jobId) state.optimisticHiddenJobs.add(jobId);
+  showAppFeedback("working", label);
+  renderDashboard(state.data?.queue || {}, state.data || {});
+}
+
+function clearDashboardPending({ jobId = "", workerId = "", restoreHidden = false }) {
+  if (jobId) {
+    state.dashboardPendingJobs.delete(jobId);
+    if (restoreHidden) state.optimisticHiddenJobs.delete(jobId);
+  }
+  if (workerId) state.dashboardPendingWorkers.delete(workerId);
+}
 function loadLayout() {
   try {
     return JSON.parse(localStorage.getItem(layoutKey) || "{}");
@@ -190,7 +228,7 @@ function render(data) {
   $("#worker-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.worker_running ? `Running as ${config.worker_id}` : "Stopped";
   $("#monitor-state").textContent = busy === "start" ? "Starting..." : busy === "stop" ? "Stopping..." : data.monitor_running ? "Integrated dashboard" : "Ready";
   $("#app-status").textContent = busy === "start" ? "Starting worker and dashboard" : busy === "stop" ? "Stopping services" : data.status || "Ready";
-  $("#app-version").textContent = `App v${data.app_version || "--"} · data ${formatSnapshotAge(data)} · code ${data.code_signature || "--"}`;
+  $("#app-version").textContent = `App v${data.app_version || "--"} - data ${formatSnapshotAge(data)} - code ${data.code_signature || "--"}`;
   document.querySelectorAll('[data-widget="worker"], [data-widget="monitor"], [data-widget="status"]').forEach(card => {
     card.classList.toggle("is-working", Boolean(busy));
   });
@@ -218,7 +256,12 @@ function render(data) {
   renderHealth(data.health || []);
   renderQueue(data.queue || {});
   renderGpus(data.gpus || [], data.gpu_message);
-  renderDashboard(data.queue || {}, data);
+  try {
+    renderDashboard(data.queue || {}, data);
+  } catch (error) {
+    console.error(error);
+    $("#dashboard-jobs").innerHTML = `<div class="dashboard-error">Dashboard refresh failed: ${esc(error.message || error)}</div>`;
+  }
   $("#log").value = (data.worker_log || []).join("\n");
 }
 
@@ -274,21 +317,23 @@ function formatSnapshotAge(data) {
 function renderDashboard(queue, appData) {
   if (state.dashboardDrag) return;
   const workers = queue.workers || [];
-  const jobs = queue.jobs || [];
+  const jobs = (queue.jobs || []).filter(job => !state.optimisticHiddenJobs.has(job.id));
   const repair = queue.repair || {};
-  const freshness = `App v${appData.app_version || "--"} · data ${formatSnapshotAge(appData)} · code ${queue.code_signature || appData.code_signature || "--"}`;
+  const freshness = `App v${appData.app_version || "--"} - data ${formatSnapshotAge(appData)} - code ${queue.code_signature || appData.code_signature || "--"}`;
   $("#dashboard-health").textContent = appData.worker_running
     ? `${repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean."}  ${freshness}`
     : `Start DreamRender to view live workers and jobs. ${freshness}`;
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
     const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
+    const pending = state.dashboardPendingWorkers.get(worker.worker_id);
     const stopAfterBatch = Boolean(worker.stop_after_batch);
-    return `<article class="dashboard-worker ${stateClass}" style="--worker-color:${color}">
+    return `<article class="dashboard-worker ${stateClass} ${pending ? "is-syncing" : ""}" style="--worker-color:${color}" data-worker-id="${esc(worker.worker_id)}">
       <span class="dashboard-worker-dot"></span>
       <div>
         <strong>${esc(worker.worker_id)}</strong>
         <div class="muted">${esc(workerLabel(worker))}</div>
+        ${pending ? `<div class="dashboard-sync-label">${esc(pending.label)}</div>` : ""}
         <div class="dashboard-worker-actions">
           <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.restart_requested ? "Restart needed" : "Restart"}</button>
           <button class="dashboard-toggle ${stopAfterBatch ? "active" : ""}" data-dashboard-action="worker_toggle_stop" data-worker="${esc(worker.worker_id)}" aria-pressed="${stopAfterBatch ? "true" : "false"}">
@@ -314,6 +359,7 @@ function renderDashboard(queue, appData) {
 function renderDashboardJob(job) {
   const collapsed = !expandedJobs.has(job.id);
   const [statusClass, statusLabel] = jobState(job);
+  const pending = state.dashboardPendingJobs.get(job.id);
   const color = statusColors[statusClass] || statusColors.queued;
   const counts = job.counts || {};
   const isDone = job.status === "done" || job.status === "archived";
@@ -334,7 +380,8 @@ function renderDashboardJob(job) {
   }
   if (canCancel) actions.push(`<button data-dashboard-action="cancel" data-job="${esc(job.id)}">Cancel</button>`);
   if (job.status !== "archived") actions.push(`<button data-dashboard-action="delete" data-job="${esc(job.id)}">Delete</button>`);
-  return `<article class="dashboard-job ${collapsed ? "collapsed" : ""}" style="--status-color:${color}" data-job-id="${esc(job.id)}">
+  return `<article class="dashboard-job ${collapsed ? "collapsed" : ""} ${pending ? "is-syncing" : ""}" style="--status-color:${color}" data-job-id="${esc(job.id)}">
+    ${pending ? `<div class="dashboard-sync-label">${esc(pending.label)}</div>` : ""}
     <div class="dashboard-job-main" data-dashboard-toggle="${esc(job.id)}">
       <div>
         <div class="dashboard-job-title">
@@ -435,8 +482,15 @@ function swapDashboardJobs(first, second) {
 }
 
 async function saveDashboardOrder(list) {
-  await post("/api/action", { action: "reorder", job_ids: dashboardJobIds(list) });
-  await refresh();
+  list.classList.add("is-syncing");
+  showAppFeedback("working", dashboardActionLabel("reorder"));
+  try {
+    await post("/api/action", { action: "reorder", job_ids: dashboardJobIds(list) }, 20000);
+    await refresh();
+    showAppFeedback("ok", "Priority order saved.");
+  } finally {
+    list.classList.remove("is-syncing");
+  }
 }
 
 function renderHealth(items) {
@@ -450,7 +504,7 @@ function renderHealth(items) {
 }
 
 function renderQueue(queue) {
-  const jobs = queue.jobs || [];
+  const jobs = (queue.jobs || []).filter(job => !state.optimisticHiddenJobs.has(job.id));
   const workers = queue.workers || [];
   const activeWorkers = workers.filter(worker => worker.state === "online").length;
   const current = jobs[0];
@@ -613,6 +667,9 @@ $("#native-dashboard").addEventListener("click", async event => {
   button.classList.add("is-loading");
   const action = button.dataset.dashboardAction;
   const workerId = button.dataset.worker || "";
+  const jobId = button.dataset.job || "";
+  const usesPending = action !== "open_output";
+  if (usesPending) setDashboardPending({ action, jobId, workerId });
   if (action === "worker_toggle_stop") {
     const nextState = button.getAttribute("aria-pressed") !== "true";
     button.classList.toggle("active", nextState);
@@ -622,12 +679,22 @@ $("#native-dashboard").addEventListener("click", async event => {
   try {
     await post("/api/action", {
       action,
-      job_id: button.dataset.job || "",
+      job_id: jobId,
       worker_id: workerId,
       direction: button.dataset.direction || "",
-    });
+    }, action === "repair" || action === "repair_job" ? 30000 : 20000);
     await refresh();
+    if (usesPending) {
+      clearDashboardPending({ jobId, workerId });
+      if (action === "delete" && jobId) state.optimisticHiddenJobs.delete(jobId);
+      showAppFeedback("ok", action === "delete" ? "Job deleted." : "Dashboard synced.");
+      renderDashboard(state.data?.queue || {}, state.data || {});
+    }
   } catch (error) {
+    if (usesPending) {
+      clearDashboardPending({ jobId, workerId, restoreHidden: true });
+      renderDashboard(state.data?.queue || {}, state.data || {});
+    }
     showAppFeedback("error", error.message || "Dashboard action failed.");
   } finally {
     button.disabled = false;
@@ -730,4 +797,4 @@ $("#copy-log").addEventListener("click", async () => {
 
 applySavedLayout();
 safeRefresh();
-setInterval(safeRefresh, 2500);
+setInterval(safeRefresh, 1500);
