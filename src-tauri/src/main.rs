@@ -6,11 +6,14 @@ use std::{
     net::TcpStream,
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
-use tauri::{Manager, Url};
+use tauri::{AppHandle, Manager, Url};
 
 struct BackendProcess(Arc<Mutex<Option<Child>>>);
 
@@ -24,6 +27,10 @@ fn main() {
     let backend = BackendProcess(Arc::new(Mutex::new(None)));
     let backend_for_setup = backend.0.clone();
     let backend_for_exit = backend.0.clone();
+    let backend_for_watchdog = backend.0.clone();
+    let shutting_down = Arc::new(AtomicBool::new(false));
+    let shutting_down_for_exit = shutting_down.clone();
+    let shutting_down_for_watchdog = shutting_down.clone();
 
     tauri::Builder::default()
         .setup(move |app| {
@@ -35,22 +42,89 @@ fn main() {
                 .lock()
                 .map_err(|error| error.to_string())? = Some(child);
             if wait_for_backend(Duration::from_secs(12)) {
-                if let Some(window) = app.get_webview_window("main") {
-                    let url =
-                        Url::parse("http://127.0.0.1:8777").map_err(|error| error.to_string())?;
-                    window.navigate(url).map_err(|error| error.to_string())?;
-                }
+                navigate_main_window(app.handle());
             }
+            let app_handle = app.handle().clone();
+            thread::spawn(move || {
+                watchdog_backend(
+                    app_handle,
+                    backend_for_watchdog,
+                    resource_dir,
+                    shutting_down_for_watchdog,
+                );
+            });
             Ok(())
         })
         .on_window_event(move |_window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                shutting_down_for_exit.store(true, Ordering::Relaxed);
                 stop_backend_process(&backend_for_exit);
             }
         })
         .manage(backend)
         .run(tauri::generate_context!())
         .expect("error while running DreamRender");
+}
+
+fn watchdog_backend(
+    app: AppHandle,
+    backend: Arc<Mutex<Option<Child>>>,
+    resource_dir: Option<PathBuf>,
+    shutting_down: Arc<AtomicBool>,
+) {
+    while !shutting_down.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_secs(1));
+        let restarted = restart_backend_if_needed(&backend, resource_dir.as_ref(), &shutting_down);
+        if restarted && wait_for_backend(Duration::from_secs(12)) {
+            navigate_main_window(&app);
+        }
+    }
+}
+
+fn restart_backend_if_needed(
+    backend: &Arc<Mutex<Option<Child>>>,
+    resource_dir: Option<&PathBuf>,
+    shutting_down: &AtomicBool,
+) -> bool {
+    if shutting_down.load(Ordering::Relaxed) {
+        return false;
+    }
+
+    let mut guard = match backend.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+
+    let mut should_restart = guard.is_none();
+    if let Some(child) = guard.as_mut() {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => {
+                *guard = None;
+                should_restart = true;
+            }
+            Ok(None) => {}
+        }
+    }
+
+    if !should_restart || shutting_down.load(Ordering::Relaxed) {
+        return false;
+    }
+
+    match start_python_backend(resource_dir) {
+        Ok(child) => {
+            *guard = Some(child);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn navigate_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(url) = Url::parse("http://127.0.0.1:8777") {
+            let _ = window.navigate(url);
+        }
+    }
 }
 
 fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io::Error> {

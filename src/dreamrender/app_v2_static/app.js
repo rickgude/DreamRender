@@ -56,6 +56,9 @@ async function fetchJson(path, options = {}, timeoutMs = 12000) {
     return data;
   } catch (error) {
     if (error.name === "AbortError") throw new Error("DreamRender is taking longer than expected. It may still be starting; check Activity for details.");
+    if (error instanceof TypeError || String(error.message || "").toLowerCase().includes("failed to fetch")) {
+      throw new Error("DreamRender backend is reconnecting. If this stays visible, restart DreamRender and check Activity for details.");
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
