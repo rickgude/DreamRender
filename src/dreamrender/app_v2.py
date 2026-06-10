@@ -370,7 +370,7 @@ class AppV2State:
         if return_code == 75:
             self.worker_expected_exit = False
             return True, "Worker restarted after requested restart"
-        if self.worker_expected_exit and return_code == 76:
+        if return_code == 76:
             self.worker_should_run = False
             self.worker_expected_exit = False
             self.worker_restart_times.clear()
@@ -561,17 +561,36 @@ class AppV2State:
             self.refresh_live_async()
             live = dict(self.live_cache)
             queue = live.get("queue", {"jobs": [], "workers": []})
-            queue_dict = queue if isinstance(queue, dict) else {"jobs": [], "workers": []}
+            queue_dict = dict(queue) if isinstance(queue, dict) else {"jobs": [], "workers": []}
             workers = [worker for worker in queue_dict.get("workers", []) if isinstance(worker, dict)]
             local_worker_id = str(self.config.get("worker_id", ""))
             local_worker_visible = any(str(worker.get("worker_id")) == local_worker_id for worker in workers)
+            local_worker_synthetic = False
+            if self.worker_running() and local_worker_id and not local_worker_visible:
+                local_worker_synthetic = True
+                workers.insert(0, {
+                    "worker_id": local_worker_id,
+                    "host": socket.gethostname(),
+                    "pid": self.worker_process.pid if self.worker_process else None,
+                    "state": "starting",
+                    "last_seen_seconds": None,
+                    "active": None,
+                    "current_code_signature": CODE_SIGNATURE,
+                    "code_signature": CODE_SIGNATURE,
+                    "code_current": True,
+                    "stop_after_batch": worker_stop_after_batch_requested(self.share(), local_worker_id),
+                    "restart_requested": worker_restart_requested(self.share(), local_worker_id),
+                    "stop_now_requested": worker_stop_now_requested(self.share(), local_worker_id),
+                    "local_process_running": True,
+                })
+                queue_dict["workers"] = workers
             health = list(live.get("health", []))
             if self.worker_running() and self.live_cache_at > 0 and not local_worker_visible:
                 health.append({
                     "label": "This Machine",
                     "ok": False,
-                    "tone": "error",
-                    "detail": f"{local_worker_id} is running but has no heartbeat in this queue path",
+                    "tone": "warn" if local_worker_synthetic else "error",
+                    "detail": f"{local_worker_id} is running locally but has not written a queue heartbeat yet",
                 })
             return {
                 "config": self.config,
@@ -647,7 +666,14 @@ class AppV2State:
             try:
                 share_snapshot = queue_snapshot(self.share())
             except Exception as exc:
-                share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
+                with self.lock:
+                    previous = self.live_cache.get("queue")
+                if isinstance(previous, dict) and (previous.get("jobs") or previous.get("workers")):
+                    share_snapshot = dict(previous)
+                    share_snapshot["stale"] = True
+                    share_snapshot["error"] = str(exc)
+                else:
+                    share_snapshot = {"jobs": [], "workers": [], "error": str(exc)}
             gpus, gpu_message = self.query_gpus_cached()
             health = self.health(share_snapshot)
             with self.lock:
@@ -698,10 +724,10 @@ class AppV2Handler(BaseHTTPRequestHandler):
         action = str(payload.get("action", ""))
         if action == "start":
             self.state.start()
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "state": self.state.snapshot()})
         elif action == "stop":
             self.state.stop()
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "state": self.state.snapshot()})
         elif action == "shutdown":
             self.state.stop()
             self.state.shutdown_requested = True
@@ -716,12 +742,12 @@ class AppV2Handler(BaseHTTPRequestHandler):
         elif action == "repair":
             result = repair_queue(self.state.share(), min_output_age_seconds=0)
             self.state.refresh_live_now()
-            response_json(self, {"ok": True, "repair": result})
+            response_json(self, {"ok": True, "repair": result, "state": self.state.snapshot()})
         elif action == "repair_job":
             job_id = str(payload.get("job_id", ""))
             result = repair_queue(self.state.share(), job_id or None, min_output_age_seconds=0)
             self.state.refresh_live_now()
-            response_json(self, {"ok": True, "repair": result})
+            response_json(self, {"ok": True, "repair": result, "state": self.state.snapshot()})
         elif action in {"worker_restart", "worker_toggle_stop", "worker_stop_now"}:
             worker_id = str(payload.get("worker_id", ""))
             if not worker_id:
@@ -743,7 +769,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                     if worker_id == str(self.state.config.get("worker_id")):
                         self.state.worker_expected_exit = True
             self.state.refresh_live_now()
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "state": self.state.snapshot()})
         elif action in {"pause", "resume", "drain", "cancel", "delete", "requeue", "mark_failed_done", "open_output"}:
             job_id = str(payload.get("job_id", ""))
             if not job_id:
@@ -767,7 +793,9 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 self.state.open_output_folder(job_id)
             if action != "open_output":
                 self.state.refresh_live_now()
-            response_json(self, {"ok": True})
+                response_json(self, {"ok": True, "state": self.state.snapshot()})
+            else:
+                response_json(self, {"ok": True})
         elif action == "move_job":
             job_id = str(payload.get("job_id", ""))
             direction = str(payload.get("direction", ""))
@@ -783,7 +811,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
             job_ids[index], job_ids[target] = job_ids[target], job_ids[index]
             set_job_priorities(self.state.share(), job_ids)
             self.state.refresh_live_now()
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "state": self.state.snapshot()})
         elif action == "reorder":
             job_ids = payload.get("job_ids", [])
             if not isinstance(job_ids, list) or not job_ids:
@@ -791,7 +819,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
                 return
             set_job_priorities(self.state.share(), [str(job_id) for job_id in job_ids])
             self.state.refresh_live_now()
-            response_json(self, {"ok": True})
+            response_json(self, {"ok": True, "state": self.state.snapshot()})
         elif action == "install_plugin":
             ok, message = self.state.install_plugin()
             response_json(self, {"ok": ok, "message": message}, HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST)

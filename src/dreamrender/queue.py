@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import __version__
+
 
 DEFAULT_COMMAND_TEMPLATE = '"{c4d}" -render "{scene}" {take_arg} -frame {start_frame} {end_frame}'
 OCTANE_COMMAND_TEMPLATE = '"{c4d}" g_modulePath="%{{g_startupPath}}/corelibs;%{{g_startupPath}}/plugins" -render "{scene}" {take_arg} -frame {start_frame} {end_frame} 1 -oimage "{output}"'
@@ -30,13 +32,7 @@ def source_signature() -> str:
     if env_signature:
         return env_signature[:10]
     if getattr(sys, "frozen", False):
-        try:
-            executable = Path(sys.executable)
-            stat = executable.stat()
-            frozen_fingerprint = f"{executable.name}:{stat.st_size}:{stat.st_mtime_ns}"
-            return hashlib.sha1(frozen_fingerprint.encode("utf-8")).hexdigest()[:10]
-        except OSError:
-            pass
+        return f"v{__version__}"[:10]
     parts = []
     for path in sorted(Path(__file__).parent.glob("*.py")):
         try:
@@ -1065,7 +1061,7 @@ def find_rendered_frame_output(job: dict[str, Any], frame_number: int, since: fl
             if min_age_seconds and time.time() - stat.st_mtime < min_age_seconds:
                 continue
             name = path.stem.lower()
-            if any(token in name for token in frame_tokens) and (not project_name or project_name in name or not recursive):
+            if any(token in name for token in frame_tokens) and (recursive or not project_name or project_name in name):
                 return {
                     "path": str(path),
                     "size": stat.st_size,

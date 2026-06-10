@@ -723,6 +723,7 @@ textarea {
   box-shadow: inset 0 0 0 2px rgba(0,0,0,.12);
 }
 .dashboard-worker.offline .dashboard-worker-dot { background: var(--bad); }
+.dashboard-worker.starting .dashboard-worker-dot { background: #8b63f6; box-shadow: 0 0 0 4px rgba(139,99,246,.22), inset 0 0 0 2px rgba(0,0,0,.12); }
 .dashboard-worker.lost .dashboard-worker-dot { background: var(--rendering); }
 .dashboard-worker.rendering .dashboard-worker-dot {
   background: var(--good);

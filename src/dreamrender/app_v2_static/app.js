@@ -271,11 +271,12 @@ function jobState(job) {
   const queued = counts.queued || 0;
   const failed = counts.failed || 0;
   if (job.status === "cancelled") return ["failed", "Cancelled"];
-  if (job.status === "draining") return ["rendering", "Draining"];
-  if (rendering > 0) return ["rendering", "Rendering"];
-  if (job.status === "paused") return ["queued", "Paused"];
+  if (job.status === "draining") return ["rendering", failed > 0 ? "Draining + issues" : "Draining"];
+  if (rendering > 0) return ["rendering", failed > 0 ? "Rendering + issues" : "Rendering"];
+  if (job.status === "paused") return ["queued", failed > 0 ? "Paused + issues" : "Paused"];
   if (job.status === "done" || job.status === "archived") return ["done", "Done"];
-  if (failed > 0) return queued > 0 ? ["queued", "Needs Retry"] : ["failed", "Needs Repair"];
+  if (failed > 0 && queued > 0) return ["queued", "Queued + issues"];
+  if (failed > 0) return ["failed", "Needs Repair"];
   return ["queued", "Queued"];
 }
 
@@ -291,6 +292,7 @@ function workerLabel(worker) {
   if (worker.stop_after_batch) return "will stop after current batch";
   if (worker.restart_requested) return "restart pending";
   if (worker.code_current === false) return "restart needed";
+  if (worker.state === "starting") return "starting, waiting for queue heartbeat";
   if (worker.state === "online") return "idle";
   if (worker.state === "heartbeat_lost") return "heartbeat lost";
   return worker.last_seen_seconds == null ? "offline" : `offline, last seen ${formatSeconds(worker.last_seen_seconds)} ago`;
@@ -327,15 +329,16 @@ function renderDashboard(queue, appData) {
     diagnostics.push(`${esc(localWorkerId)} is running, but no heartbeat was found in this queue. Check that this machine uses the exact same queue folder.`);
   }
   if (queue.error) diagnostics.push(`Queue read error: ${esc(queue.error)}`);
-  const autoRepair = repair.changed ? `Auto-repair updated ${repair.changed} frame(s).` : "Auto-repair: queue clean.";
+  const queueState = queue.stale ? "Showing last known queue data while DreamRender reconnects." : appData.worker_running ? "Dashboard live." : "Start DreamRender to view live workers and jobs.";
+  const repairText = repair.changed ? ` Repair updated ${repair.changed} frame(s).` : "";
   $("#dashboard-health").innerHTML = `
-    <div>${appData.worker_running ? autoRepair : "Start DreamRender to view live workers and jobs."} ${esc(freshness)}</div>
-    <div class="dashboard-queue-path">Queue: ${esc(queuePath || "not configured")}${appData.local_worker_visible === false ? ` - Local worker missing: ${esc(localWorkerId)}` : ""}</div>
+    <div>${esc(queueState)}${esc(repairText)} ${esc(freshness)}</div>
+    <div class="dashboard-queue-path">Queue: ${esc(queuePath || "not configured")}${appData.local_worker_visible === false ? ` - Local worker heartbeat pending: ${esc(localWorkerId)}` : ""}</div>
     ${diagnostics.map(message => `<div class="dashboard-alert">${message}</div>`).join("")}
   `;
   $("#dashboard-workers").innerHTML = workers.length ? workers.map(worker => {
     const color = workerColor(worker.worker_id);
-    const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
+    const stateClass = worker.state === "heartbeat_lost" ? "lost" : worker.state === "starting" ? "starting" : worker.state !== "online" ? "offline" : worker.active ? "rendering" : "";
     const pending = state.dashboardPendingWorkers.get(worker.worker_id);
     const stopAfterBatch = Boolean(worker.stop_after_batch);
     return `<article class="dashboard-worker ${stateClass} ${pending ? "is-syncing" : ""}" style="--worker-color:${color}" data-worker-id="${esc(worker.worker_id)}">
@@ -345,7 +348,7 @@ function renderDashboard(queue, appData) {
         <div class="muted">${esc(workerLabel(worker))}</div>
         ${pending ? `<div class="dashboard-sync-label">${esc(pending.label)}</div>` : ""}
         <div class="dashboard-worker-actions">
-          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.restart_requested ? "Restart needed" : "Restart"}</button>
+          <button data-dashboard-action="worker_restart" data-worker="${esc(worker.worker_id)}">${worker.code_current === false ? "Restart needed" : "Restart"}</button>
           <button class="dashboard-toggle ${stopAfterBatch ? "active" : ""}" data-dashboard-action="worker_toggle_stop" data-worker="${esc(worker.worker_id)}" aria-pressed="${stopAfterBatch ? "true" : "false"}">
             <span></span>Stop after batch
           </button>
@@ -647,11 +650,17 @@ $("#toggle").addEventListener("click", async () => {
   setToggleBusy(action);
   try {
     await saveConfig();
-    await post("/api/action", { action }, action === "start" ? 20000 : 12000);
-    try {
-      await refresh();
-    } catch (error) {
-      showAppFeedback("working", error.message);
+    const result = await post("/api/action", { action }, action === "start" ? 20000 : 12000);
+    if (result.state) {
+      state.data = result.state;
+      state.initialized = true;
+      render(result.state);
+    } else {
+      try {
+        await refresh();
+      } catch (error) {
+        showAppFeedback("working", error.message);
+      }
     }
     clearToggleBusy(action === "start" ? "DreamRender is running." : "DreamRender stopped.");
   } catch (error) {
@@ -687,13 +696,19 @@ $("#native-dashboard").addEventListener("click", async event => {
     showAppFeedback("working", nextState ? `${workerId} will stop after the current batch.` : `${workerId} will keep rendering new batches.`);
   }
   try {
-    await post("/api/action", {
+    const result = await post("/api/action", {
       action,
       job_id: jobId,
       worker_id: workerId,
       direction: button.dataset.direction || "",
     }, action === "repair" || action === "repair_job" ? 30000 : 20000);
-    await refresh();
+    if (result.state) {
+      state.data = result.state;
+      state.initialized = true;
+      render(result.state);
+    } else {
+      await refresh();
+    }
     if (usesPending) {
       clearDashboardPending({ jobId, workerId });
       if (action === "delete" && jobId) state.optimisticHiddenJobs.delete(jobId);
