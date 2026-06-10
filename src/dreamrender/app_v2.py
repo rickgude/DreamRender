@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__
 from .queue import (
     CODE_SIGNATURE,
     Share,
@@ -41,7 +42,7 @@ LEGACY_CONFIG_PATH = Path.home() / "DreamRenderApp.json"
 DEFAULT_C4D = Path(r"C:\Program Files\Maxon Cinema 4D 2026\Commandline.exe")
 STATIC_DIR = Path(__file__).with_name("app_v2_static")
 C4D_VERSION = "2026"
-APP_VERSION = "0.1.17"
+APP_VERSION = __version__
 WORKER_RESTART_LIMIT = 5
 WORKER_RESTART_WINDOW_SECONDS = 10 * 60
 WINDOWS_ERROR_MODE = 0x0001 | 0x0002 | 0x8000

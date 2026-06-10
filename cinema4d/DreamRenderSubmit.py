@@ -813,12 +813,12 @@ class SceneCheckTableArea(gui.GeUserArea):
 
     def _icon(self, level):
         if level == CHECK_ERROR:
-            return "✕", (0.94, 0.30, 0.36)
+            return "X", (0.94, 0.30, 0.36)
         if level == CHECK_WARNING:
-            return "⚠", (1.00, 0.58, 0.22)
+            return "!", (1.00, 0.58, 0.22)
         if level == CHECK_OK:
-            return "✓", (0.35, 0.79, 0.51)
-        return "•", (0.65, 0.67, 0.68)
+            return "OK", (0.35, 0.79, 0.51)
+        return ".", (0.65, 0.67, 0.68)
 
     def _fill(self, x1, y1, x2, y2, color):
         self.DrawSetPen(c4d.Vector(color[0], color[1], color[2]))
@@ -1669,7 +1669,7 @@ class DreamRenderDialog(gui.GeDialog):
             self.SetTimer(20 if dragging or self.check_table.is_dragging() else 0)
             return
         label, build_row = self.check_steps[self.check_step_index]
-        spinner_frames = ("◐", "◓", "◑", "◒")
+        spinner_frames = (".", "o", "O", "o")
         spinner = spinner_frames[self.check_step_index % len(spinner_frames)]
         if self.check_step_phase == "show":
             pending_row = {"label": label, "level": None, "message": "checking...", "info": "", "text": ""}

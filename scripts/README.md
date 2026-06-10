@@ -46,8 +46,7 @@ Normal artists should not need this.
 
 ### `ADVANCED_Classic_App.bat`
 
-Use only if you need the old Tkinter control panel for troubleshooting. The
-normal app is `..\START_DREAMRENDER.vbs`.
+Legacy compatibility launcher. It now opens the current DreamRender App.
 
 ### `ADVANCED_Monitor_Only.bat`
 

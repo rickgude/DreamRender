@@ -79,8 +79,6 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Check whether this machine can use the DreamRender share.")
     doctor.add_argument("--share", required=True, type=Path)
 
-    classic_app = subparsers.add_parser("classic-app", help="Launch the legacy Tkinter control panel.")
-
     app_v2 = subparsers.add_parser("app-v2", help="Launch the DreamRender App UI.")
     app_v2.add_argument("--host", default="127.0.0.1")
     app_v2.add_argument("--port", type=int, default=8777)
@@ -226,12 +224,6 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def cmd_app(args: argparse.Namespace) -> int:
-    from .app import main as app_main
-
-    app_main()
-    return 0
-
 
 def cmd_app_v2(args: argparse.Namespace) -> int:
     from .app_v2 import run_app_v2
@@ -246,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     argv = list(argv)
     if argv and argv[0] == "app":
-        argv[0] = "classic-app"
+        argv[0] = "app-v2"
     args = parser.parse_args(argv)
     handlers = {
         "init-share": cmd_init_share,
@@ -258,7 +250,6 @@ def main(argv: list[str] | None = None) -> int:
         "monitor": cmd_monitor,
         "set-job-status": cmd_set_job_status,
         "doctor": cmd_doctor,
-        "classic-app": cmd_app,
         "app-v2": cmd_app_v2,
     }
     return handlers[args.command](args)

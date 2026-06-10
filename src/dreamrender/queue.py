@@ -1362,8 +1362,12 @@ def list_workers(share: Share, stale_after_seconds: int = 60) -> list[dict[str, 
     return workers
 
 
+def empty_repair_result() -> dict[str, Any]:
+    return {"jobs": [], "changed": 0, "outputs": 0, "stale_failed": 0}
+
+
 def queue_snapshot(share: Share, include_archived: bool = False) -> dict[str, Any]:
-    repair_result = repair_queue(share, stale_after_seconds=600, min_output_age_seconds=3, active_only=True)
+    repair_result = empty_repair_result()
     workers = list_workers(share)
     active_job_ids = {
         worker["active"]["job_id"]
