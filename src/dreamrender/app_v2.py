@@ -267,6 +267,7 @@ class AppV2State:
         self.worker_should_run = False
         self.worker_restart_times: deque[float] = deque()
         self.worker_expected_exit = False
+        self.shutdown_requested = False
         self.live_cache: dict[str, object] = {
             "queue": {"jobs": [], "workers": [], "loading": True},
             "health": [
@@ -675,6 +676,10 @@ class AppV2Handler(BaseHTTPRequestHandler):
         elif action == "stop":
             self.state.stop()
             response_json(self, {"ok": True})
+        elif action == "shutdown":
+            self.state.stop()
+            self.state.shutdown_requested = True
+            response_json(self, {"ok": True})
         elif action == "open_dashboard":
             response_json(self, {"ok": True, "url": self.state.monitor_url()})
         elif action == "open_queue":
@@ -789,7 +794,7 @@ class AppV2Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
 
-def run_app_v2(host: str = "127.0.0.1", port: int = 8777, open_browser: bool = True) -> None:
+def run_app_v2(host: str = "127.0.0.1", port: int = 8777, open_browser: bool = True, parent_pid: int | None = None) -> None:
     set_windows_error_mode()
     state = AppV2State()
     handler = type("DreamRenderAppV2Handler", (AppV2Handler,), {"state": state})
@@ -800,7 +805,12 @@ def run_app_v2(host: str = "127.0.0.1", port: int = 8777, open_browser: bool = T
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     print(f"DreamRender App running at {url}", flush=True)
     try:
-        while True:
+        while not state.shutdown_requested:
+            if parent_pid and not process_exists(parent_pid):
+                with state.lock:
+                    state.status = "DreamRender UI closed; stopping backend."
+                    state.worker_log.append(state.status)
+                break
             try:
                 server.handle_request()
             except OSError as exc:

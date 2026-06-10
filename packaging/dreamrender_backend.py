@@ -26,6 +26,24 @@ def ensure_cli_streams() -> None:
             sys.stderr = sys.stdout
 
 
+
+def extract_parent_pid(argv: list[str]) -> tuple[list[str], int | None]:
+    cleaned = [argv[0]]
+    parent_pid = None
+    index = 1
+    while index < len(argv):
+        if argv[index] == "--app-parent-pid" and index + 1 < len(argv):
+            try:
+                parent_pid = int(argv[index + 1])
+            except ValueError:
+                parent_pid = None
+            index += 2
+            continue
+        cleaned.append(argv[index])
+        index += 1
+    return cleaned, parent_pid
+
+
 def log_fatal_exception() -> None:
     try:
         with log_path().open("a", encoding="utf-8") as handle:
@@ -38,10 +56,12 @@ def log_fatal_exception() -> None:
 if __name__ == "__main__":
     set_windows_error_mode()
     try:
+        argv, parent_pid = extract_parent_pid(sys.argv)
+        sys.argv = argv
         if len(sys.argv) > 1:
             ensure_cli_streams()
             raise SystemExit(cli_main())
-        run_app_v2(open_browser=False)
+        run_app_v2(open_browser=False, parent_pid=parent_pid)
     except SystemExit:
         raise
     except BaseException:

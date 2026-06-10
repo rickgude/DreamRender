@@ -28,13 +28,12 @@ fn main() {
     tauri::Builder::default()
         .setup(move |app| {
             let resource_dir = app.path().resource_dir().ok();
-            if !backend_is_ready() {
-                let child = start_python_backend(resource_dir.as_ref())
-                    .map_err(|error| error.to_string())?;
-                *backend_for_setup
-                    .lock()
-                    .map_err(|error| error.to_string())? = Some(child);
-            }
+            stop_stale_backend();
+            let child = start_python_backend(resource_dir.as_ref())
+                .map_err(|error| error.to_string())?;
+            *backend_for_setup
+                .lock()
+                .map_err(|error| error.to_string())? = Some(child);
             if wait_for_backend(Duration::from_secs(12)) {
                 if let Some(window) = app.get_webview_window("main") {
                     let url =
@@ -61,6 +60,8 @@ fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io
     {
         let mut command = Command::new(backend);
         command
+            .arg("--app-parent-pid")
+            .arg(std::process::id().to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -75,6 +76,8 @@ fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io
         .arg("dreamrender")
         .arg("app-v2")
         .arg("--no-browser")
+        .arg("--parent-pid")
+        .arg(std::process::id().to_string())
         .env("PYTHONPATH", repo_root.join("src"))
         .current_dir(repo_root)
         .stdin(Stdio::null())
@@ -146,7 +149,7 @@ fn backend_is_ready() -> bool {
 
 fn stop_backend_services() {
     if let Ok(mut stream) = TcpStream::connect("127.0.0.1:8777") {
-        let body = r#"{"action":"stop"}"#;
+        let body = r#"{"action":"shutdown"}"#;
         let request = format!(
             "POST /api/action HTTP/1.1\r\nHost: 127.0.0.1:8777\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             body.len(),
@@ -155,6 +158,33 @@ fn stop_backend_services() {
         let _ = stream.write_all(request.as_bytes());
     }
     thread::sleep(Duration::from_millis(250));
+}
+
+
+#[cfg(target_os = "windows")]
+fn kill_backend_executables() {
+    let _ = Command::new("taskkill")
+        .args(["/IM", "dreamrender-backend.exe", "/T", "/F"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_backend_executables() {}
+
+fn stop_stale_backend() {
+    if backend_is_ready() {
+        stop_backend_services();
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(5) && backend_is_ready() {
+            thread::sleep(Duration::from_millis(100));
+        }
+        if backend_is_ready() {
+            kill_backend_executables();
+            thread::sleep(Duration::from_millis(500));
+        }
+    }
 }
 
 fn stop_backend_process(backend: &Arc<Mutex<Option<Child>>>) {

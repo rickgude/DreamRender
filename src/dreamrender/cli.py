@@ -85,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     app_v2.add_argument("--host", default="127.0.0.1")
     app_v2.add_argument("--port", type=int, default=8777)
     app_v2.add_argument("--no-browser", action="store_true")
+    app_v2.add_argument("--parent-pid", type=int)
 
     return parser
 
@@ -235,7 +236,7 @@ def cmd_app(args: argparse.Namespace) -> int:
 def cmd_app_v2(args: argparse.Namespace) -> int:
     from .app_v2 import run_app_v2
 
-    run_app_v2(args.host, args.port, open_browser=not args.no_browser)
+    run_app_v2(args.host, args.port, open_browser=not args.no_browser, parent_pid=args.parent_pid)
     return 0
 
 
