@@ -36,7 +36,7 @@ fn main() {
         .setup(move |app| {
             let resource_dir = app.path().resource_dir().ok();
             stop_stale_backend();
-            let child = start_python_backend(resource_dir.as_ref())
+            let child = start_python_backend(resource_dir.as_ref(), None)
                 .map_err(|error| error.to_string())?;
             *backend_for_setup
                 .lock()
@@ -110,7 +110,7 @@ fn restart_backend_if_needed(
         return false;
     }
 
-    match start_python_backend(resource_dir) {
+    match start_python_backend(resource_dir, Some("DreamRender backend reconnected after an internal restart.")) {
         Ok(child) => {
             *guard = Some(child);
             true
@@ -127,7 +127,10 @@ fn navigate_main_window(app: &AppHandle) {
     }
 }
 
-fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io::Error> {
+fn start_python_backend(
+    resource_dir: Option<&PathBuf>,
+    backend_event: Option<&str>,
+) -> Result<Child, std::io::Error> {
     if let Some(backend) = resource_dir
         .map(|path| path.join("dreamrender-backend.exe"))
         .filter(|path| path.exists())
@@ -139,6 +142,9 @@ fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        if let Some(event) = backend_event {
+            command.env("DREAMRENDER_BACKEND_EVENT", event);
+        }
         return command.spawn();
     }
 
@@ -157,6 +163,9 @@ fn start_python_backend(resource_dir: Option<&PathBuf>) -> Result<Child, std::io
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if let Some(event) = backend_event {
+        command.env("DREAMRENDER_BACKEND_EVENT", event);
+    }
     command.spawn()
 }
 

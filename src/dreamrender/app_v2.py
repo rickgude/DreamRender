@@ -34,7 +34,9 @@ from .queue import (
     requeue_failed,
     set_job_priorities,
     set_job_status,
+    worker_restart_requested,
     worker_stop_after_batch_requested,
+    worker_stop_now_requested,
 )
 
 
@@ -288,6 +290,10 @@ class AppV2State:
         self.gpu_backoff_until = 0.0
         self.gpu_last_query = 0.0
         self.lock = threading.RLock()
+        startup_event = os.environ.get("DREAMRENDER_BACKEND_EVENT", "").strip()
+        if startup_event:
+            self.status = startup_event
+            self.worker_log.append(startup_event)
 
     def python_command(self) -> list[str]:
         if getattr(sys, "frozen", False):
@@ -544,7 +550,7 @@ class AppV2State:
                 })
         return items
 
-    def snapshot(self) -> dict[str, object]:
+    def snapshot(self, force_live: bool = False) -> dict[str, object]:
         with self.lock:
             if self.worker_process and self.worker_process.poll() is not None:
                 return_code = self.worker_process.returncode
@@ -558,7 +564,11 @@ class AppV2State:
                 self.monitor_process = None
                 if self.worker_should_run:
                     self.start_monitor()
+        if force_live:
+            self.refresh_live_now()
+        else:
             self.refresh_live_async()
+        with self.lock:
             live = dict(self.live_cache)
             queue = live.get("queue", {"jobs": [], "workers": []})
             queue_dict = dict(queue) if isinstance(queue, dict) else {"jobs": [], "workers": []}
@@ -698,7 +708,8 @@ class AppV2Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/state":
-            response_json(self, self.state.snapshot())
+            params = parse_qs(parsed.query)
+            response_json(self, self.state.snapshot(force_live=params.get("fresh", ["0"])[0] == "1"))
             return
         if parsed.path == "/api/monitor-url":
             response_json(self, {"url": self.state.monitor_url()})

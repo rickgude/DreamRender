@@ -201,7 +201,8 @@ function selectTab(tabId) {
 }
 
 async function refresh() {
-  const data = await fetchJson("/api/state", {}, 10000);
+  const wantsFreshQueue = document.body.classList.contains("dashboard-active");
+  const data = await fetchJson(wantsFreshQueue ? "/api/state?fresh=1" : "/api/state", {}, wantsFreshQueue ? 15000 : 10000);
   state.data = data;
   state.initialized = true;
   render(data);
@@ -273,9 +274,9 @@ function jobState(job) {
   const rendering = counts.rendering || 0;
   const queued = counts.queued || 0;
   const failed = counts.failed || 0;
-  if (job.status === "cancelled") return ["failed", "Cancelled"];
   if (job.status === "draining") return ["rendering", failed > 0 ? "Draining + issues" : "Draining"];
   if (rendering > 0) return ["rendering", failed > 0 ? "Rendering + issues" : "Rendering"];
+  if (job.status === "cancelled") return ["failed", "Cancelled"];
   if (job.status === "paused") return ["queued", failed > 0 ? "Paused + issues" : "Paused"];
   if (job.status === "done" || job.status === "archived") return ["done", "Done"];
   if (failed > 0 && queued > 0) return ["queued", "Queued + issues"];
